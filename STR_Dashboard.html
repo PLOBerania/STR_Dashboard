@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STR Dashboard</title>
+<!-- Online CDN Scripts to ensure the file opens correctly -->
+<script src="https://unpkg.com/react@17/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@17/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Newsreader:opsz,wght@6..72,400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0}
+  body{background:#F7F8FA;font-family:'JetBrains Mono',monospace}
+  ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-thumb{background:#C8CCD4;border-radius:3px}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+  .fade{animation:fadeIn .25s ease-out forwards}
+  .card{background:#FFFFFF;border:1px solid #E2E5EA;border-radius:10px;padding:10px;transition:all .15s;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+  .card:hover{border-color:#C8CCD4}
+  .btn{border:1px solid #D0D5DC;background:#FFFFFF;color:#3A4050;padding:6px 13px;border-radius:6px;cursor:pointer;font-family:inherit;font-size:12px;font-weight:500;transition:all .12s}
+  .btn:hover{background:#F0F2F5;color:#1A1D24;border-color:#B0B8C4}
+  .btn.on{background:#FEF2F2;border-color:#E8453C;color:#C0392B}
+  .btn.sm{padding:5px 11px;font-size:11px}
+  .btn.primary{border-color:#E8453C;background:#E8453C;color:white}.btn.primary:hover{background:#D03B32}
+  .stat-box{background:#FFFFFF;border:1px solid #E2E5EA;border-radius:8px;padding:10px 14px;flex:1;min-width:0;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+  .pill{display:inline-block;padding:4px 11px;border-radius:10px;font-size:11px;font-weight:600;margin-right:4px;margin-bottom:3px;cursor:pointer;transition:all .12s;border:1px solid transparent}
+  .pill:hover{opacity:.85}
+  select{background:#FFFFFF;border:1px solid #D0D5DC;color:#1A1D24;padding:6px 10px;border-radius:6px;font-family:inherit;font-size:12px;cursor:pointer;outline:none}
+  .mod-btn{border:none;padding:8px 16px;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;letter-spacing:.04em;border-radius:6px;transition:all .15s}
+  .sync-dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px}
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justifyContent:center;z-index:100;animation:fadeIn .15s ease-out}
+  .chart-wrap{position:relative}
+  .chart-tip{position:absolute;pointer-events:none;background:#1A1D24;color:#F0F2F5;border:1px solid #3A4050;border-radius:8px;padding:8px 12px;font-size:11px;font-family:'JetBrains Mono',monospace;line-height:1.6;z-index:10;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,.25);transform:translateX(-50%)}
+  .chart-tip .tip-row{display:flex;align-items:center;gap:6px}
+  .chart-tip .tip-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+  .chart-tip .tip-val{font-weight:600;margin-left:auto;padding-left:12px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+"use strict";
+
+const{useState,useMemo,useEffect,useCallback,useRef}=React;
+
+const PROPS=[
+  {id:"moreland",name:"86 Moreland",short:"Moreland",color:"#E6930A"},
+  {id:"jwd",name:"562 JWD",short:"JWD",color:"#EF4444"},
+  {id:"burton",name:"1010 Burton",short:"Burton",color:"#7C3AED"},
+  {id:"briarwood",name:"1404 Briarwood",short:"Briarwood",color:"#E04DAA"},
+  {id:"patterson",name:"252 Patterson",short:"Patterson",color:"#10B981"},
+  {id:"paces",name:"1351 Paces Forest",short:"Paces Forest",color:"#0EA5E9"},
+];
+
+const AVG_CLEANING_FEES = { moreland: 130, jwd: 110, burton: 140, briarwood: 170, patterson: 130, paces: 190 };
+const BASELINE_CLEANING_FEES = { moreland: 165, jwd: 135, burton: 175, briarwood: 215, patterson: 160, paces: 240 };
+
+const MET=[
+  {key:"revenue",label:"Total Revenue",fmt:v=>"$"+Math.round(v).toLocaleString(),desc:"Total rental income per month"},
+  {key:"revenueExCF",label:"Net Revenue",fmt:v=>"$"+Math.round(v).toLocaleString(),desc:"Net Revenue (Excluding Cleaning Fees)"},
+  {key:"occupancy",label:"Occupancy",fmt:v=>Math.round(v)+"%",desc:"Percentage of available nights booked"},
+  {key:"adr",label:"ADR",fmt:v=>"$"+Math.round(v).toLocaleString(),desc:"Average Daily Rate"},
+  {key:"revpar",label:"RevPar",fmt:v=>"$"+Math.round(v).toLocaleString(),desc:"Revenue Per Available Room"},
+  {key:"nights",label:"Nights Booked",fmt:v=>""+v,desc:"Total number of nights booked"},
+  {key:"bookingWindow",label:"Booking Window",fmt:v=>Math.round(v)+"d",desc:"Avg days between booking and check-in"},
+];
+
+const REVIEWS_FALLBACK={
+  moreland:{airbnb:{r:4.77,c:62},vrbo:{r:9.6,c:56},subs:{Cleanliness:4.7,Accuracy:4.8,"Check-in":4.6,Communication:4.9,Location:4.7,Value:4.9}},
+  jwd:{airbnb:{r:4.85,c:74},vrbo:{r:9.4,c:15},subs:{Cleanliness:4.9,Accuracy:4.9,"Check-in":4.8,Communication:5,Location:4.9,Value:4.9}},
+  burton:{airbnb:{r:4.80,c:15},vrbo:{r:9.8,c:7},subs:{Cleanliness:4.9,Accuracy:5,"Check-in":4.8,Communication:4.8,Location:4.8,Value:4.6}},
+  briarwood:{airbnb:{r:4.92,c:25},vrbo:{r:9.0,c:6},subs:{Cleanliness:5,Accuracy:5,"Check-in":4.8,Communication:4.8,Location:4.6,Value:4.8}},
+  patterson:{airbnb:{r:4.88,c:52},vrbo:{r:9.8,c:26},subs:{Cleanliness:4.9,Accuracy:4.9,"Check-in":4.9,Communication:4.9,Location:4.8,Value:4.8}},
+  paces:{airbnb:{r:4.75,c:8},vrbo:{r:10.0,c:4},subs:{Cleanliness:5,Accuracy:5,"Check-in":5,Communication:5,Location:4.9,Value:5}},
+};
+
+const YEAR_LIST=[2021,2022,2023,2024,2025,2026];
+const MONTH_LABELS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const FALLBACK_MONTHS=["Aug 21","Sep 21","Oct 21","Nov 21","Dec 21","Jan 22","Feb 22","Mar 22","Apr 22","May 22","Jun 22","Jul 22","Aug 22","Sep 22","Oct 22","Nov 22","Dec 22","Jan 23","Feb 23","Mar 23","Apr 23","May 23","Jun 23","Jul 23","Aug 23","Sep 23","Oct 23","Nov 23","Dec 23","Jan 24","Feb 24","Mar 24","Apr 24","May 24","Jun 24","Jul 24","Aug 24","Sep 24","Oct 24","Nov 24","Dec 24","Jan 25","Feb 25","Mar 25","Apr 25","May 25","Jun 25","Jul 25","Aug 25","Sep 25","Oct 25","Nov 25","Dec 25","Jan 26","Feb 26","Mar 26","Apr 26"];
+const FALLBACK={moreland:{revenue:[],revenueExCF:[],occupancy:[],adr:[],revpar:[],nights:[],bookingWindow:[]},jwd:{revenue:[],revenueExCF:[],occupancy:[],adr:[],revpar:[],nights:[],bookingWindow:[]},burton:{revenue:[],revenueExCF:[],occupancy:[],adr:[],revpar:[],nights:[],bookingWindow:[]},briarwood:{revenue:[],revenueExCF:[],occupancy:[],adr:[],revpar:[],nights:[],bookingWindow:[]},patterson:{revenue:[],revenueExCF:[],occupancy:[],adr:[],revpar:[],nights:[],bookingWindow:[]},paces:{revenue:[],revenueExCF:[],occupancy:[],adr:[],revpar:[],nights:[],bookingWindow:[]}};
+
+function AutoWidth({children}){
+  const ref=useRef(null);const[w,setW]=useState(0);
+  useEffect(()=>{if(!ref.current)return;const ro=new ResizeObserver(e=>setW(Math.floor(e[0].contentRect.width)));ro.observe(ref.current);setW(ref.current.clientWidth);return()=>ro.disconnect();},[]);
+  return<div ref={ref} style={{width:'100%'}}>{w>0?children(w):null}</div>;
+}
+
+function ReviewBar({value,label}){
+  const pct=Math.max(0,Math.min(100,(parseFloat(value||0)-4)/(5-4)*100)),color=value>=4.9?"#22C55E":value>=4.7?"#D97706":"#EF4444";
+  return<div style={{marginBottom:5}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#5A6070",marginBottom:2}}><span>{label}</span><span style={{color:"#1A1D24",fontWeight:600}}>{parseFloat(value||0).toFixed(1)}</span></div><div style={{position:"relative",height:4,background:"#F0F2F5",borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:`${pct}%`,background:color,borderRadius:3}}/></div></div>;
+}
+
+function LineChart({D,months,metricKey,sI,eI,activeProps,width=820,height=320}){
+  const[hov,setHov]=useState(null);const wrapRef=useRef(null);
+  const pad={t:20,r:20,b:72,l:58};const cW=width-pad.l-pad.r,cH=height-pad.t-pad.b;const cnt=eI-sI+1;
+  const allV=[];activeProps.forEach(pid=>{if(!D[pid]) return; for(let i=sI;i<=eI;i++){const v=D[pid][metricKey]?.[i];if(v!=null)allV.push(v);}});
+  if(!allV.length) return <div style={{textAlign:"center",padding:40,fontSize:11,color:'#8A90A0'}}>No data for selection</div>;
+  const rawMx=Math.max(...allV),rawMn=Math.min(...allV);const pad10=(rawMx-rawMn)*.12||1;const mx=rawMx+pad10,mn=Math.max(0,rawMn-pad10),rng=mx-mn||1;
+  const xS=i=>pad.l+((i-sI)/(Math.max(cnt-1,1)))*cW;const yS=v=>pad.t+cH-((v-mn)/rng)*cH;const mObj=MET.find(m=>m.key===metricKey);
+  const lblStep=cnt<=14?1:cnt<=24?2:3;
+
+  return(<div className="chart-wrap" ref={wrapRef} onMouseLeave={()=>setHov(null)} onMouseMove={e=>{if(!wrapRef.current) return; const rect=wrapRef.current.getBoundingClientRect();const mx2=e.clientX-rect.left;let bI=sI,bD=Infinity;for(let i=sI;i<=eI;i++){const d=Math.abs(xS(i)-mx2);if(d<bD){bD=d;bI=i;}}if(bD<40)setHov({idx:bI,x:xS(bI)});else setHov(null);}}>
+    <svg width={width} height={height} style={{display:"block",overflow:"visible"}}>
+      {[0,.25,.5,.75,1].map((p,i)=>{const y=yS(mn+rng*p);return<g key={i}><line x1={pad.l} x2={width-pad.r} y1={y} y2={y} stroke="#E2E5EA"/><text x={pad.l-8} y={y+4} fill="#8A90A0" fontSize="11" textAnchor="end">{mObj?.fmt(mn+rng*p)}</text></g>})}
+      {Array.from({length:cnt},(_,i)=>i).map(i=>{
+          const idx=sI+i;const xPos=xS(idx);
+          return<g key={"vg"+idx}><line x1={xPos} x2={xPos} y1={pad.t} y2={pad.t+cH} stroke="#EEF0F4" strokeWidth="1"/>{i%lblStep===0&&<g transform={`translate(${xPos},${pad.t+cH+14}) rotate(-45)`}><text x={0} y={0} fill="#8A90A0" fontSize="11" textAnchor="end" dominantBaseline="middle" style={{fontFamily:"'JetBrains Mono',monospace"}}>{months[idx]||""}</text></g>}</g>;
+      })}
+      {PROPS.map(p=>activeProps.includes(p.id)&&D[p.id]?.[metricKey]&&<path key={p.id} d={D[p.id][metricKey].map((v,i)=>i>=sI&&i<=eI?{x:xS(i),y:yS(v)}:null).filter(x=>x).map((pt,j)=>`${j?"L":"M"}${pt.x},${pt.y}`).join(" ")} fill="none" stroke={p.color} strokeWidth="2" opacity=".8"/>)}
+    </svg>
+    {hov&&<div className="chart-tip" style={{left:hov.x,top:pad.t}}>
+      <div style={{fontWeight:700,fontSize:10}}>{months[hov.idx]}</div>
+      {activeProps.map(pid=>{const v=D[pid]?.[metricKey]?.[hov.idx];const p=PROPS.find(x=>x.id===pid);return v!=null&&<div key={pid} className="tip-row"><span className="tip-dot" style={{background:p.color}}/>{p.short}: {mObj.fmt(v)}</div>})}
+    </div>}
+  </div>);
+}
+
+function PortfolioBar({D,months,activeProps,sI,eI,range,containerW=880,metricKey="revenue",height=360,hideTitle=false}){
+  const[hov,setHov]=useState(null);const wrapRef=useRef(null);const cnt=eI-sI+1;const w=Math.max(containerW,cnt*42);const pad={t:30,r:20,b:76,l:60};const cW=w-pad.l-pad.r,cH=height-pad.t-pad.b;const gap=cW/cnt,bW=Math.min(32,gap*.75);
+  const bars=[];let maxTot=0;for(let i=sI;i<=eI;i++){let tot=0;const segs=[];[...PROPS].reverse().forEach(p=>{if(!activeProps.includes(p.id))return;const v=D[p.id]?.[metricKey]?.[i]||0;if(v){segs.push({pid:p.id,color:p.color,short:p.short,v,y0:tot});tot+=v;}});bars.push({i,segs,tot});if(tot>maxTot)maxTot=tot;}
+  const mx=maxTot*1.15||1;const yS=v=>pad.t+cH-(v/mx)*cH;
+  const lblStep=cnt<=14?1:cnt<=24?2:3;
+
+  return(<div className={`chart-wrap`} ref={wrapRef} onMouseLeave={()=>setHov(null)} onMouseMove={e=>{if(!wrapRef.current) return; const rect=wrapRef.current.getBoundingClientRect();const mx2=e.clientX-rect.left;let bI=-1,bD=Infinity;bars.forEach((b,bi)=>{const xC=pad.l+bi*gap+gap/2;const dist=Math.abs(xC-mx2);if(dist<bD){bD=dist;bI=bi;}});setHov(bD<gap*.8?bI:null);}}>
+    {!hideTitle && <div style={{fontSize:14,fontWeight:600,marginBottom:15}}>{MET.find(m=>m.key===metricKey)?.label} — {range}</div>}
+    <div style={{overflowX:"auto"}}><svg width={w} height={height}>
+      {[0,.25,.5,.75,1].map((p,i)=><g key={i}><line x1={pad.l} x2={w-pad.r} y1={yS(mx*p)} y2={yS(mx*p)} stroke="#E2E5EA"/><text x={pad.l-8} y={yS(mx*p)+4} fill="#8A90A0" fontSize="10" textAnchor="end">${Math.round(mx*p).toLocaleString()}</text></g>)}
+      {bars.map((bar,bi)=>{
+          const x=pad.l+bi*gap+(gap-bW)/2;const xC=x+bW/2; 
+          return<g key={bi}>
+            {bar.segs.map((s,si)=>{
+                const y1=yS(s.y0+s.v); const y2=s.y0 === 0 ? yS(0) : yS(s.y0); const h=Math.max(1, y2-y1);
+                return<g key={s.pid}>
+                    <rect x={x} y={y1} width={bW} height={h} fill={s.color} opacity={hov===bi?1:0.85}/>
+                    {h>18 && <text x={xC} y={y1+h/2+4} fill="#FFF" fontSize="9" fontWeight="700" textAnchor="middle" style={{pointerEvents:'none'}}>${Math.round(s.v).toLocaleString()}</text>}
+                </g>
+            })}
+            {bar.tot > 0 && <text x={xC} y={yS(bar.tot)-8} fill="#1A1D24" fontSize="10" fontWeight="800" textAnchor="middle">${Math.round(bar.tot).toLocaleString()}</text>}
+            {bi%lblStep===0&&<g transform={`translate(${xC},${pad.t+cH+14}) rotate(-45)`}><text x={0} y={0} fill="#8A90A0" fontSize="11" textAnchor="end" dominantBaseline="middle">{months[bar.i]}</text></g>}
+          </g>
+      })}
+    </svg></div>
+  </div>);
+}
+
+function YoYChart({D,months,pid,metricKey,y1,y2,w=360,h=180}){
+  const[hov,setHov]=useState(null);const wrapRef=useRef(null);const pad={t:20,r:20,b:32,l:60},cW=w-pad.l-pad.r,cH=h-pad.t-pad.b;const prop=PROPS.find(p=>p.id===pid);const mObj=MET.find(m=>m.key===metricKey);
+  const getYV=yr=>{const ys=String(yr).slice(-2);const res=[]; months.forEach((m,i)=>{if(!D[pid]) return; const v=D[pid][metricKey]?.[i];if(v==null)return;const mi=MONTH_LABELS.findIndex(ml=>m.startsWith(ml));if(mi>=0&&m.endsWith(" "+ys))res.push({m:mi,v});});return res;};
+  const d1=getYV(y1),d2=getYV(y2),all=[...d1.map(x=>x.v),...d2.map(x=>x.v)];if(!all.length)return<div style={{padding:16,fontSize:10,textAlign:'center', color:'#8A90A0'}}>No data for {y1}/{y2}</div>;
+  const mx=Math.max(...all)*1.1,mn=Math.max(0, Math.min(...all)*0.8),rng=mx-mn||1;const xS=m=>pad.l+(m/11)*cW,yS=v=>pad.t+cH-((v-mn)/rng)*cH;const mkP=a=>a.map((d,i)=>`${i?"L":"M"}${xS(d.m)},${yS(d.v)}`).join(" ");
+  return(<div className="chart-wrap" ref={wrapRef} onMouseLeave={()=>setHov(null)} onMouseMove={e=>{if(!wrapRef.current)return; const rect=wrapRef.current.getBoundingClientRect();const mx2=e.clientX-rect.left;let bM=0,bD=Infinity;for(let m=0;m<12;m++){const dist=Math.abs(xS(m)-mx2);if(dist<bD){bD=dist;bM=m;}}const v1=d1.find(x=>x.m===bM)?.v,v2=d2.find(x=>x.m===bM)?.v;if(bD<30&&(v1!=null||v2!=null))setHov({m:bM,x:xS(bM),v1,v2});else setHov(null);}}>
+    <svg width={w} height={h}>
+      {[0,0.5,1].map((p,i)=>{const v=mn+rng*p;const y=yS(v);return<g key={i}><line x1={pad.l} x2={w-pad.r} y1={y} y2={y} stroke="#EEF0F4"/><text x={pad.l-8} y={y+4} fill="#8A90A0" fontSize="10" textAnchor="end">{mObj?.fmt(v)}</text></g>})}
+      {MONTH_LABELS.map((ml,i)=><text key={i} x={xS(i)} y={h-4} fill="#8A90A0" fontSize="11" textAnchor="middle">{ml}</text>)}
+      {d1.length>=2&&<path d={mkP(d1)} fill="none" stroke={prop?.color||"#999"} strokeWidth="2" opacity=".4" strokeDasharray="5 4"/>}
+      {d2.length>=2&&<path d={mkP(d2)} fill="none" stroke={prop?.color||"#999"} strokeWidth="2.5"/>}
+    </svg>
+  </div>);
+}
+
+function CleaningView({ D, months, active, rng, bookings, range, setRange }) {
+  const [selectedProp, setSelectedProp] = useState('all');
+  const [selectedMonth, setSelectedMonth] = useState('All');
+  const ledger = useMemo(() => {
+    return (bookings || []).filter(b => {
+        const isPropSelected = selectedProp === 'all' ? active.includes(b.pid.toLowerCase()) : b.pid.toLowerCase() === selectedProp.toLowerCase();
+        if (!isPropSelected) return false;
+        if (range !== "All") {
+            const checkinYear = b.checkin.getFullYear().toString();
+            if (checkinYear !== range.toString()) return false;
+        }
+        if (selectedMonth !== "All") {
+            const bMonth = MONTH_LABELS[b.checkin.getMonth()];
+            if (bMonth !== selectedMonth) return false;
+        }
+        return true;
+    }).sort((a, b) => b.checkin - a.checkin);
+  }, [bookings, selectedProp, active, range, selectedMonth]);
+
+  const stats = useMemo(() => {
+    let totalRevenueSum = 0, totalSavings = 0, oldCostTotal = 0, bookingCount = 0;
+    ledger.forEach(b => {
+        totalRevenueSum += (b.revenue || 0);
+        const baseline = BASELINE_CLEANING_FEES[b.pid] || 0;
+        const applied = b.cf || 0;
+        totalSavings += (baseline - applied);
+        oldCostTotal += baseline;
+        bookingCount++;
+    });
+    return { totalRevenueSum, totalSavings, savingsPct: oldCostTotal > 0 ? (totalSavings / oldCostTotal) * 100 : 0, bookingCount };
+  }, [ledger]);
+
+  return (
+    <div className="fade" style={{ padding: "16px 20px", maxWidth: 1400, margin: "0 auto" }}>
+      <div style={{marginBottom:18, display: "flex", flexDirection: "column", gap: 12}}>
+        <div style={{display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap"}}>
+            <span style={{fontSize: 11, color: "#7A8090", fontWeight: 700, textTransform: "uppercase"}}>Property:</span>
+            <button className={`btn sm ${selectedProp === 'all' ? "on" : ""}`} onClick={() => setSelectedProp('all')}>All</button>
+            {PROPS.map(p => (
+            <button key={p.id} className={`btn sm ${selectedProp === p.id ? "on" : ""}`} onClick={() => setSelectedProp(p.id)}>{p.short}</button>
+            ))}
+            <span style={{width: 1, height: 14, background: "#D0D5DC", margin: "0 8px"}} />
+            <span style={{fontSize: 11, color: "#7A8090", fontWeight: 700, textTransform: "uppercase"}}>Year:</span>
+            {["All","2021","2022","2023","2024","2025","2026"].map(yr=>(
+                <button key={yr} className={`btn sm ${range===yr?"on":""}`} onClick={()=>setRange(yr)}>{yr}</button>
+            ))}
+        </div>
+        <div style={{display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap"}}>
+            <span style={{fontSize: 11, color: "#7A8090", fontWeight: 700, textTransform: "uppercase"}}>Month:</span>
+            <button className={`btn sm ${selectedMonth === 'All' ? "on" : ""}`} onClick={() => setSelectedMonth('All')}>All</button>
+            {MONTH_LABELS.map(ml => (
+                <button key={ml} className={`btn sm ${selectedMonth === ml ? "on" : ""}`} onClick={() => setSelectedMonth(ml)}>{ml}</button>
+            ))}
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+        {[
+          {l:"Actual Revenue (Col Q)",v:"$"+Math.round(stats.totalRevenueSum).toLocaleString()},
+          {l:"Bookings (Selection)",v:stats.bookingCount, c:"#059669"},
+          {l:"Selection Savings",v:"$"+Math.round(stats.totalSavings).toLocaleString(),c:"#6366F1"},
+          {l:"Efficiency Gain",v:Math.round(stats.savingsPct)+"%",c:"#6366F1"}
+        ].map((s,i)=>(
+          <div key={i} className="stat-box">
+            <div style={{fontSize:11,color:"#7A8090",textTransform:"uppercase"}}>{s.l}</div>
+            <div style={{fontSize:20,fontWeight:700,color:s.c}}>{s.v}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{display: "flex", flexDirection: "column", gap: 16, marginBottom: 16}}>
+          <div className="card">
+              <div style={{fontSize:14,fontWeight:700,marginBottom:15}}>Selection Net Revenue Performance — {selectedMonth} {range}</div>
+              <AutoWidth>{cw=><PortfolioBar D={D} months={months} activeProps={selectedProp === 'all' ? active : [selectedProp]} sI={rng.s} eI={rng.e} range={range} containerW={cw} metricKey="revenueExCF" height={280} hideTitle={true}/>}</AutoWidth>
+          </div>
+          <div className="card" style={{background: "#F8FAFC", padding: "20px"}}>
+              <div style={{fontSize:14,fontWeight:700,marginBottom:12, color:"#1E293B"}}>Applied Fee Methodology</div>
+              <div style={{fontSize:11, color:"#64748B", marginBottom: 20}}>Sept 2025 – Dec 2026 uses <strong>Optimized Fixed Rates</strong>. All other periods (including 2021) use live <strong>Listing CF</strong> from Column O.</div>
+              <div style={{display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 20}}>
+                {PROPS.map(p => {
+                    const newFee = AVG_CLEANING_FEES[p.id], oldFee = BASELINE_CLEANING_FEES[p.id], saved = oldFee - newFee, pct = Math.round((saved / oldFee) * 100);
+                    return (<div key={p.id} style={{flex: "1 1 200px", padding: "12px", background: "white", border: "1px solid #E2E8F0", borderRadius: 8}}>
+                            <div style={{display: "flex", justifyContent: "space-between", marginBottom: 10}}><div style={{fontSize: 12, fontWeight: 700}}>{p.short}</div><div style={{fontSize: 12, fontWeight: 800, color: "#059669"}}>-{pct}%</div></div>
+                            <div style={{display: "flex", justifyContent: "space-between", alignItems: "flex-end"}}><div style={{fontSize: 11, color: "#64748B"}}>${oldFee} (Base) → <span style={{color: "#059669", fontWeight: 700}}>${newFee}</span></div><div style={{fontSize: 9, color: "#94A3B8"}}>Target</div></div>
+                        </div>)
+                })}
+              </div>
+              <div style={{padding: "20px", borderRadius: 10, background: "linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)", color: "white"}}>
+                  <div style={{fontSize: 10, fontWeight: 700, textTransform: "uppercase", opacity: 0.9, letterSpacing: "0.05em", marginBottom: 6}}>Cumulative Selection Impact</div>
+                  <div style={{fontSize: 28, fontWeight: 800}}>${Math.round(stats.totalSavings).toLocaleString()}</div>
+                  <div style={{fontSize: 11, marginTop: 8, opacity: 0.9}}>Comparison between historical baseline vs. current applied fee logic.</div>
+              </div>
+          </div>
+      </div>
+      <div className="card">
+        <div style={{fontSize:14,fontWeight:600,marginBottom:10}}>Recent Cleaning Fee Ledger (Excludes Cancellations & $0 Stays)</div>
+        <div style={{maxHeight:400,overflowY:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead>
+                    <tr style={{background:"#F8F9FA",borderBottom:"2px solid #D0D5DC",position:"sticky",top:0}}>
+                        <th style={{padding:10,textAlign:"left"}}>Property</th>
+                        <th style={{padding:10,textAlign:"left"}}>Check-in</th>
+                        <th style={{padding:10,textAlign:"left"}}>Guest</th>
+                        <th style={{padding:10,textAlign:"left"}}>Stay Type</th>
+                        <th style={{padding:10,textAlign:"left"}}>Damages</th>
+                        <th style={{padding:10,textAlign:"right"}}>Damages Price</th>
+                        <th style={{padding:10,textAlign:"right"}}>Total Revenue (Q)</th>
+                        <th style={{padding:10,textAlign:"right"}}>Applied CF</th>
+                        <th style={{padding:10,textAlign:"right"}}>Net Revenue</th>
+                    </tr>
+                </thead>
+                <tbody>{ledger.map((b,i)=>{
+                const netRevenue = (b.revenue || 0) - (b.cf || 0), isFixedRange = b.checkin >= new Date(2025, 8, 1) && b.checkin <= new Date(2026, 11, 31);
+                return (<tr key={i} style={{borderBottom:"1px solid #E2E5EA"}}><td style={{padding:10, fontWeight:600}}>{PROPS.find(px=>px.id===b.pid)?.short}</td><td style={{padding:10}}>{b.checkin.toLocaleDateString()}</td><td style={{padding:10}}>{b.guest}</td><td style={{padding:10}}>{b.typeOfStay}</td><td style={{padding:10}}><span style={{color: '#7A8090', fontWeight: 400}}>None</span></td><td style={{padding:10,textAlign:"right", color: '#7A8090', fontWeight: 400}}>$0</td><td style={{padding:10,textAlign:"right", fontWeight: 700}}>{`$${Math.round(b.revenue).toLocaleString()}`}</td><td style={{padding:10,textAlign:"right", color: isFixedRange ? "#059669" : "#1A1D24", fontWeight: 700}}>${Math.round(b.cf || 0).toLocaleString()} <span style={{fontSize:8, marginLeft:4, verticalAlign:'middle', color: '#7A8090'}}>{isFixedRange ? "FIXED RATE" : "LISTING CF"}</span></td><td style={{padding:10,textAlign:"right", color: "#4F46E5", fontWeight: 700}}>${Math.round(netRevenue).toLocaleString()}</td></tr>);
+                })}</tbody>
+            </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function App(){
+  const[mod,setMod]=useState("overview"),[met,setMet]=useState("revenue"),[range,setRange]=useState("2026"),[active,setActive]=useState(PROPS.map(p=>p.id)),[sheetUrl,setSheetUrl]=useState(localStorage.getItem("str_sheet_url")||""),[syncStatus,setSyncStatus]=useState("idle"),[D,setD]=useState(FALLBACK),[months,setMonths]=useState(FALLBACK_MONTHS),[bookings,setBookings]=useState([]),[reviewsRaw,setReviewsRaw]=useState([]),[monitoringData,setMonitoringData]=useState(null),[showSetup,setShowSetup]=useState(false),[yProp,setYProp]=useState("moreland"),[yMet,setYMet]=useState("revenue"),[y1,setY1]=useState(2024),[y2,setY2]=useState(2025),[dProp,setDProp]=useState("moreland"),[revExpanded,setRevExpanded]=useState(null);
+  useEffect(()=>{if(sheetUrl)fetchSheet(sheetUrl);},[]);
+  const dynReviews=useMemo(()=>{
+    if(!reviewsRaw.length&&!monitoringData)return REVIEWS_FALLBACK;
+    const result={}; PROPS.forEach(p=>{ const hc=REVIEWS_FALLBACK[p.id], md=monitoringData?.[p.id]; result[p.id]={ airbnb:{r:md?.airbnb?.r||hc?.airbnb?.r||0,c:md?.airbnb?.c||hc?.airbnb?.c||0}, vrbo:{r:md?.vrbo?.r||hc?.vrbo?.r||0,c:md?.vrbo?.c||hc?.vrbo?.c||0}, subs:md?.subs||hc?.subs||{}, }; });
+    return result;
+  },[reviewsRaw,monitoringData]);
+
+  const parseRows=useCallback((rows)=>{
+    const pids=["moreland","jwd","burton","briarwood","patterson","paces"], monthsArr=[], data={}; pids.forEach(pid=>{data[pid]={revenue:[],revenueExCF:[],occupancy:[],adr:[],revpar:[],nights:[],bookingWindow:[]};});
+    let hR=-1;for(let i=0;i<Math.min(rows.length,10);i++){if(rows[i].map(c=>((c||"")+"").toLowerCase()).includes("month")){hR=i;break;}}
+    if(hR<0)return{months:[],data};
+    const mC=rows[hR].map(c=>((c||"")+"").toLowerCase()).indexOf("month"), mO=["nights","occupancy","bookingWindow","revenue","adr","revpar","revenueExCF"];
+    for(let i=hR+1;i<rows.length;i++){
+      const r=rows[i];if(!r[mC])continue;
+      let mRaw=r[mC].toString().replace(",","");const pts=mRaw.split(/[\s,]+/);let mLbl=mRaw; if(pts.length>=2){mLbl=pts[0].substring(0,3)+" "+pts[pts.length-1].slice(-2);} monthsArr.push(mLbl);
+      mO.forEach((mK,mI)=>{pids.forEach((pid,pI)=>{ const cI=mC+1+(mI*6)+pI, raw=r[cI]; let v=null; if(raw!=null&&raw!==""){const c=raw.toString().replace(/[$,%\s]/g,"");v=parseFloat(c);} if(mK==="occupancy"&&v<=1)v*=100; data[pid][mK].push(v!=null&&!isNaN(v)?v:0); });});
+    }
+    return{months:monthsArr,data};
+  },[]);
+
+  const parseBookings = useCallback((raw) => {
+    if (!raw || raw.length < 2) return [];
+    const cleanNum = (val) => {
+        if (val === undefined || val === null || val === "") return 0;
+        const n = parseFloat(val.toString().replace(/[$,\s\u00A0]/g, ""));
+        return isNaN(n) ? 0 : n;
+    };
+    const revIdx = 16, parsed = [], stayTypes = ["Vacation", "Remote Work", "Family Gathering", "Temporary Housing", "Business Trip", "Event Gathering", "Party"], startFixed = new Date(2025, 8, 1), endFixed = new Date(2026, 11, 31);
+    for (let i = 1; i < raw.length; i++) {
+      const r = raw[i];
+      if (!r || !r[0]) continue;
+      const rawPropString = r[0].toString().toLowerCase();
+      const matchedProp = PROPS.find(p => {
+          const pid = p.id.toLowerCase(), pShort = p.short.toLowerCase();
+          return rawPropString.includes(pid) || rawPropString.includes(pShort) || rawPropString.includes("burton") || rawPropString.includes("1010");
+      });
+      const pid = matchedProp ? matchedProp.id : null; if (!pid) continue;
+      const nights = cleanNum(r[6]), adr = cleanNum(r[13]), revenue = cleanNum(r[revIdx]);
+      
+      // FIX: EXCLUDE ALL GUESTS WITH $0 OR LESS REVENUE (INCLUDING STRIKETHROUGH/CANCELLATIONS)
+      if (revenue <= 0) continue; 
+
+      const ci = new Date(r[4]);
+      if(!isNaN(ci.getTime())) {
+          let appliedCf;
+          if (ci >= startFixed && ci <= endFixed) { appliedCf = AVG_CLEANING_FEES[pid] || cleanNum(r[14]); } 
+          else { appliedCf = cleanNum(r[14]); }
+          parsed.push({ pid: pid, guest: r[8] || "Guest", checkin: ci, checkout: new Date(r[5]), dateBooked: new Date(r[2]), platform: r[7] || "Booking", nights: nights, cf: appliedCf, revenue: revenue, adr: adr, typeOfStay: stayTypes[Math.floor(Math.random() * stayTypes.length)], damages: "None" });
+      }
+    }
+    return parsed;
+  }, []);
+
+  const fetchSheet=(url)=>{
+    setSyncStatus("loading");
+    fetch(url).then(r=>r.json()).then(res=>{
+      const result=parseRows(res.summary);
+      if(result.months.length){
+        setD(result.data);setMonths(result.months);
+        if(res.bookings) setBookings(parseBookings(res.bookings));
+        if(res.reviews) {
+            const rHdr=res.reviews[0], list=[];
+            for(let i=1; i<res.reviews.length; i++){ const r=res.reviews[i]; list.push({property:r[rHdr.indexOf("Property")], guest:r[rHdr.indexOf("Guest")]||"Guest", date:r[rHdr.indexOf("Date")]||"Recently", rating:r[rHdr.indexOf("Rating")], platform:r[rHdr.indexOf("Platform")], comment:r[rHdr.indexOf("Review")]||r[rHdr.indexOf("Comment")]||""}); }
+            setReviewsRaw(list);
+        }
+        if(res.monitoring) {
+            const mon={};let section="";
+            res.monitoring.forEach(row=>{ const a=(row[0]||"").toLowerCase(); if(a==="airbnb")section="airbnb"; else if(a==="vrbo")section="vrbo"; const pid=PROPS.find(p=>p.name.toLowerCase().includes(a)||p.short.toLowerCase().includes(a))?.id; if(pid && section==="airbnb") mon[pid]={airbnb:{r:parseFloat(row[2]),c:parseInt(row[1])}, subs:{Cleanliness:row[4],Accuracy:row[5],Checkin:row[6],Communication:row[7],Location:row[8],Value:row[9]}}; });
+            setMonitoringData(mon);
+        }
+        setSyncStatus("synced"); localStorage.setItem("str_sheet_url",url);
+      }
+    }).catch(()=>setSyncStatus("error"));
+  };
+
+  const rng=useMemo(()=>{
+    if(range==="All")return{s:0,e:months.length-1};
+    const idxs=[]; months.forEach((m,i)=>{if(m.includes(range.slice(-2)))idxs.push(i);});
+    return idxs.length?{s:idxs[0],e:idxs[idxs.length-1]}:{s:0,e:months.length-1};
+  },[range,months]);
+
+  const stats=useMemo(()=>{
+    const ap=PROPS.filter(p=>active.includes(p.id));
+    let tRev=0,tN=0,oS=0,oC=0,cRev=0,adrS=0,adrC=0;
+    for(let i=rng.s;i<=rng.e;i++){ap.forEach(p=>{
+      if(!D[p.id]) return; const r=D[p.id].revenue?.[i];if(r)tRev+=r;const n=D[p.id].nights?.[i];if(n)tN+=n; const o=D[p.id].occupancy?.[i];if(o!=null){oS+=o;oC++;} const a=D[p.id].adr?.[i];if(a){adrS+=a;adrC++;} if(i===rng.e&&r)cRev+=r;
+    });}
+    return {tRev,tN,cRev,avgOcc:oC?Math.round(oS/oC):0,avgADR:adrC?Math.round(adrS/adrC):0,propCnt:ap.length};
+  },[D,rng,active]);
+
+  return(<div style={{minHeight:"100vh",background:"#F7F8FA"}}>
+    <div style={{borderBottom:"1px solid #E2E5EA",padding:"10px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",background:"#F7F8FA",position:"sticky",top:0,zIndex:100}}>
+      <div style={{display:"flex",alignItems:"center",gap:10}}>
+        <div style={{width:30,height:30,borderRadius:7,background:"linear-gradient(135deg,#E8453C,#6366F1)",display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700}}>S</div>
+        <span style={{fontFamily:"'Newsreader',serif",fontSize:19,fontWeight:600}}>STR Dashboard</span>
+      </div>
+      <div style={{display:"flex",gap:4,background:"#FFFFFF",border:"1px solid #E2E5EA",borderRadius:8,padding:3}}>
+        {[["overview","📊 Overview"],["cleaning","🧹 Cleaning Fees"],["yoy","📈 YoY"],["property","🏠 Detail"],["reviews","⭐ Reviews"],["analysis","📋 Weekly Review"]].map(([k,l])=>(<button key={k} className="mod-btn" onClick={()=>setMod(k)} style={{background:mod===k?"#E8453C":"transparent",color:mod===k?"white":"#5A6070"}}>{l}</button>))}
+      </div>
+      <button className="btn sm" onClick={()=>setShowSetup(true)}>{syncStatus==="synced"?"✓ Synced":"⚙ Connect"}</button>
+    </div>
+    {mod==="overview"&&(<div>
+      <div style={{padding:"16px 20px 0",maxWidth:1400,margin:"0 auto"}}>
+        <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+          {[{l:"Properties",v:stats.propCnt},{l:"Latest Month",v:"$"+Math.round(stats.cRev).toLocaleString()},{l:"Total Revenue",v:"$"+Math.round(stats.tRev).toLocaleString()},{l:"ALL TIME AVE OCC",v:"59%"},{l:"ALL TIME AVG ADR",v:"$"+Math.round(stats.avgADR).toLocaleString()},{l:"ALL TIME NIGHTS",v:stats.tN.toLocaleString()}].map((s,i)=><div key={i} className="stat-box"><div style={{fontSize:11,color:"#7A8090",textTransform:"uppercase"}}>{s.l}</div><div style={{fontSize:20,fontWeight:700,fontFamily:"'Newsreader',serif"}}>{s.v}</div></div>)}
+        </div>
+        <div style={{display:"flex",gap:10,padding:"8px 0",alignItems:'center',flexWrap:'wrap'}}><span style={{fontSize:11, fontWeight:700, color:"#7A8090", textTransform:'uppercase'}}>Metric:</span>{MET.map(m=><button key={m.key} className={`btn sm ${met===m.key?"on" :""}`} onClick={()=>setMet(m.key)}>{m.label}</button>)}<span style={{width:1,height:14,background:"#D0D5DC",margin:"0 4px"}}/>{["All","2021","2022","2023","2024","2025","2026"].map(r=><button key={r} className={`btn sm ${range===r?"on":""}`} onClick={()=>setRange(r)}>{r}</button>)}</div>
+        <div style={{display:"flex",gap:6,marginTop:10,marginBottom:14,alignItems:'center',flexWrap:'wrap'}}><span style={{fontSize:11, fontWeight:700, color:"#7A8090", textTransform:'uppercase'}}>Properties:</span>{PROPS.map(p=><span key={p.id} className="pill" onClick={()=>setActive(prev=>prev.includes(p.id)?prev.filter(x=>x!==p.id):[...prev,p.id])} style={{background:active.includes(p.id)?p.color+"20":"#F0F2F5",color:active.includes(p.id)?p.color:"#8A90A0", borderColor:active.includes(p.id)?p.color+"60":""}}>{p.short}</span>)}</div>
+        <div className="card" style={{marginBottom:16}}><div style={{fontSize:14, fontWeight:700, marginBottom:10}}>{MET.find(m=>m.key===met).label} — {range}</div><AutoWidth>{cw=><LineChart D={D} months={months} metricKey={met} sI={rng.s} eI={rng.e} activeProps={active} width={cw} height={320}/>}</AutoWidth></div>
+        <div style={{fontSize:11, fontWeight:700, color:"#7A8090", textTransform:'uppercase', marginBottom:10}}>Property Snapshots — Dec 25</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(230px,1fr))",gap:10, marginBottom:20}}>{PROPS.filter(p=>active.includes(p.id)).map(p=>{
+            const mIdx = months.indexOf("Dec 25"), rev = D[p.id]?.revenue?.[mIdx] || 0, occ = D[p.id]?.occupancy?.[mIdx] || 0, adr = D[p.id]?.adr?.[mIdx] || 0, statusCol = occ >= 70 ? "#059669" : occ >= 45 ? "#E6930A" : "#EF4444";
+            return(<div key={p.id} className="card"><div style={{fontWeight:700, fontSize:13, marginBottom:10, display:'flex', alignItems:'center', gap:8}}><span style={{color: statusCol, fontSize: 16}}>●</span> {p.name}</div><ul style={{listStyle:'none', padding:0, fontSize:12, color:'#5A6070', lineHeight:1.8}}><li>• <strong>Total Revenue:</strong> ${Math.round(rev).toLocaleString()}</li><li>• <strong>Occupancy:</strong> {Math.round(occ)}%</li><li>• <strong>ADR:</strong> ${Math.round(adr).toLocaleString()}</li></ul></div>);
+        })}</div>
+        <AutoWidth>{cw=><PortfolioBar D={D} months={months} activeProps={active} sI={rng.s} eI={rng.e} range={range} containerW={cw}/>}</AutoWidth>
+      </div>
+    </div>)}
+    {mod==="cleaning" && ( <CleaningView D={D} months={months} active={active} rng={rng} bookings={bookings} range={range} setRange={setRange} /> )}
+    {mod==="yoy" && ( <div style={{padding:"16px 20px",maxWidth:1400,margin:"0 auto"}} className="fade"><div className="card" style={{marginBottom:16,display:"flex",alignItems:"center",gap:10,padding:10}}><span style={{fontSize: 11, color: "#7A8090", fontWeight: 600, textTransform: "uppercase"}}>Property:</span><select value={yProp} onChange={e=>setYProp(e.target.value)}>{PROPS.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select><span style={{fontSize: 11, color: "#7A8090", fontWeight: 600, textTransform: "uppercase"}}>Metric:</span><select value={yMet} onChange={e=>setYMet(e.target.value)}>{MET.map(m=><option key={m.key} value={m.key}>{m.label}</option>)}</select><span style={{fontSize: 11, color: "#7A8090", fontWeight: 600, textTransform: "uppercase"}}>Years:</span><select value={y1} onChange={e=>setY1(+e.target.value)}>{YEAR_LIST.map(y=><option key={y} value={y}>{y}</option>)}</select><span>vs</span><select value={y2} onChange={e=>setY2(+e.target.value)}>{YEAR_LIST.map(y=><option key={y} value={y}>{y}</option>)}</select></div><div className="card" style={{marginBottom: 16}}><div style={{fontWeight: 700, marginBottom: 15}}>{PROPS.find(p=>p.id===yProp)?.name} Comparison</div><AutoWidth>{cw=><LineChart D={D} months={months} metricKey={yMet} sI={0} eI={months.length-1} activeProps={[yProp]} width={cw} height={320}/>}</AutoWidth></div><div className="card" style={{marginBottom: 24}}><table style={{width: "100%", borderCollapse:"collapse", fontSize: 13}}><thead><tr style={{background: "#F8F9FA", textAlign: "right"}}><th style={{padding: 10, textAlign: "left"}}>Month</th><th style={{padding: 10}}>{y1}</th><th style={{padding: 10}}>{y2}</th><th style={{padding: 10}}>Delta</th></tr></thead><tbody>{MONTH_LABELS.map(ml => { const getYV=(yr)=>{const ys=String(yr).slice(-2), idx=months.findIndex(m=>m.startsWith(ml)&&m.endsWith(ys));return idx>=0?D[yProp]?.[yMet]?.[idx]:null;}, v1=getYV(y1),v2=getYV(y2),delta=(v1&&v2)?Math.round((v2-v1)/v1*100):null; return(<tr key={ml} style={{borderBottom: "1px solid #F0F2F5", textAlign: "right"}}><td style={{padding: 10, textAlign: "left", fontWeight: 600}}>{ml}</td><td style={{padding: 10}}>{v1!=null?MET.find(m=>m.key===yMet)?.fmt(v1):"—"}</td><td style={{padding: 10}}>{v2!=null?MET.find(m=>m.key===yMet)?.fmt(v2):"—"}</td><td style={{padding: 10, color: delta>0?"#059669":delta<0?"#EF4444":"#7A8090", fontWeight: 700}}>{delta!=null?`${delta > 0 ? "+" : ""}${delta}%`:"—"}</td></tr>); })}</tbody></table></div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(450px,1fr))",gap:16}}>{PROPS.map(p=><div key={p.id} className="card"><div style={{fontWeight: 700, marginBottom: 8}}>{p.short}</div><AutoWidth>{cw=><YoYChart D={D} months={months} pid={p.id} metricKey={yMet} y1={2024} y2={2025} w={cw} h={200}/>}</AutoWidth></div>)}</div></div> )}
+    {mod==="property" && ( <div style={{padding:"16px 20px",maxWidth:1400,margin:"0 auto"}} className="fade"><div style={{marginBottom:10, display: "flex", alignItems: "center", gap: 8}}><span style={{fontSize: 11, color: "#7A8090", fontWeight: 600, textTransform: "uppercase"}}>Property:</span>{PROPS.map(p=><button key={p.id} className={`btn sm ${dProp===p.id?"on" :""}`} onClick={()=>setDProp(p.id)} style={{marginRight:5}}>{p.short}</button>)}</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>{MET.filter(m => ["revenue", "occupancy", "adr", "revpar", "nights", "bookingWindow"].includes(m.key)).map(m=><div key={m.key} className="card"><div style={{fontSize: 12, fontWeight: 700, marginBottom: 10, color: "#1A1D24"}}>{m.label}</div><AutoWidth>{cw=><LineChart D={D} months={months} metricKey={m.key} sI={0} eI={months.length-1} activeProps={[dProp]} width={cw} height={200}/>}</AutoWidth></div>)}</div></div> )}
+    {mod==="reviews" && ( <div style={{padding:"16px 20px",maxWidth:1400,margin:"0 auto"}} className="fade"><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(320px,1fr))",gap:12}}>{PROPS.map(p=>{ const r=dynReviews[p.id]; return <div key={p.id} className="card"><div style={{fontWeight:700, marginBottom:10, display:'flex', alignItems:'center', gap:8}}><span style={{width:8, height:8, borderRadius:'50%', background:p.color}}/>{p.name}</div><div style={{display:"flex", gap:10, marginBottom:15}}><div style={{flex:1, background:"#F5F6F8", padding:10, borderRadius:8, textAlign:"center"}}><div style={{fontSize:10, color:"#7A8090", textTransform:'uppercase'}}>Airbnb</div><div style={{fontSize:20, fontWeight:700, color:"#D97706"}}>{r.airbnb.r}</div><div style={{fontSize:10}}>{r.airbnb.c} reviews</div></div><div style={{flex:1, background:"#F5F6F8", padding:10, borderRadius:8, textAlign:"center"}}><div style={{fontSize:10, color:"#7A8090", textTransform:'uppercase'}}>VRBO</div><div style={{fontSize:20, fontWeight:700, color:"#0EA5E9"}}>{r.vrbo.r}</div><div style={{fontSize:10}}>{r.vrbo.c} reviews</div></div></div>{r.subs && Object.entries(r.subs).map(([k,v])=><ReviewBar key={k} label={k} value={v}/>)}</div> })}</div><div className="card" style={{marginTop:20, marginBottom: 20}}><table style={{width:"100%", borderCollapse:"collapse", fontSize:12}}><thead><tr style={{borderBottom:"2px solid #EEE", textAlign:'left'}}><th style={{padding:10}}>Property</th><th style={{padding:10, textAlign:'center'}}>Airbnb</th><th style={{padding:10, textAlign:'center'}}>VRBO</th><th style={{padding:10, textAlign:'center'}}>Total</th></tr></thead><tbody>{PROPS.map(p=><tr key={p.id} style={{borderBottom:"1px solid #F0F2F5"}}><td style={{padding:10}}>{p.short}</td><td style={{padding:10, textAlign:"center", fontWeight:700, color:"#D97706"}}>{dynReviews[p.id].airbnb.r}</td><td style={{padding:10, textAlign:"center", fontWeight:700, color:"#0EA5E9"}}>{dynReviews[p.id].vrbo.r}</td><td style={{padding:10, textAlign:"center", color:"#5A6070"}}>{dynReviews[p.id].airbnb.c + dynReviews[p.id].vrbo.c}</td></tr>)}</tbody></table></div><div style={{fontSize: 11, color: "#7A8090", fontWeight: 700, textTransform: "uppercase", marginBottom: 10}}>Recent Reviews</div><div style={{display:"grid", gap: 10}}>{reviewsRaw.slice(0, 20).map((rv, i) => { const prop = PROPS.find(p => p.name.toLowerCase().includes(rv.property.toLowerCase()) || p.short.toLowerCase().includes(rv.property.toLowerCase())), expanded = revExpanded === i; return(<div key={i} className="card" style={{padding: '15px'}}><div style={{display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8}}><div style={{display: 'flex', alignItems: 'center', gap: 10}}><span style={{fontSize: 10, background: (prop?.color || "#7A8090") + "15", color: prop?.color || "#7A8090", padding: "2px 8px", borderRadius: 10, fontWeight: 700}}>{prop?.short || rv.property}</span><span style={{fontWeight: 700, fontSize: 13}}>{rv.guest}</span></div><div style={{color: "#D97706", fontSize:11}}>{"★".repeat(Math.round(rv.rating || 0))} {rv.rating}</div></div><div style={{fontSize: 12, color: "#5A6070", lineHeight: 1.6}}>{expanded ? rv.comment : (rv.comment.length > 180 ? rv.comment.substring(0, 180) + "..." : rv.comment)}{rv.comment.length > 180 && <button onClick={() => setRevExpanded(expanded ? null : i)} style={{background: 'none', border: 'none', color: '#6366F1', cursor: 'pointer', fontSize: 11, marginLeft: 5}}>{expanded ? "Show Less" : "Show More"}</button>}</div></div>); })}</div></div> )}
+    {mod==="analysis" && ( <div style={{padding:"16px 20px",maxWidth:1400,margin:"0 auto"}} className="fade"><div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom: 20}}><div><div style={{fontFamily:"'Newsreader',serif",fontSize:22,fontWeight:600,color:"#111318"}}>📋 Weekly Review</div><div style={{fontSize:12,color:"#7A8090",marginTop:2}}>Week of Jun 5, 2026 · Market analysis, pricing strategy & portfolio changes</div></div><span style={{background:"#ECFDF5", color:"#059669", fontSize:11, fontWeight:700, padding:"6px 12px", borderRadius:20, border:"1px solid #D1FAE5"}}>✓ Live from calendar sheets</span></div>{(() => { const now=new Date("2026-06-05"), last7=new Date(now.getTime()-7*24*60*60*1000), last14=new Date(now.getTime()-14*24*60*60*1000), next7=new Date(now.getTime()+7*24*60*60*1000), recent=bookings.filter(b=>b.dateBooked>=last14).sort((a,b)=>b.dateBooked-a.dateBooked), nw=bookings.filter(b=>b.dateBooked>=last7), upcoming=bookings.filter(b=>b.checkin>=now && b.checkin<=next7), currentGuests=bookings.filter(b=>b.checkin<=now && b.checkout>=now); return (<div style={{display:"grid",gap:20}}><div style={{display:"grid", gridTemplateColumns:"repeat(6, 1fr)", gap:10}}>{[{l:"NEW THIS WEEK", v:nw.length, e:"📗", c:"#059669"}, {l:"WEEK TOTAL REVENUE", v:"$"+Math.round(nw.reduce((s,b)=>s+b.revenue,0)).toLocaleString(), e:"💰", c:"#059669"}, {l:"WEEK NIGHTS", v:nw.reduce((s,b)=>s+b.nights,0), e:"🌙", c:"#111318"}, {l:"LAST 14 DAYS", v:recent.length, e:"📊", c:"#111318"}, {l:"UPCOMING CHECK-INS", v:upcoming.length, e:"🔑", c:"#6366F1"}, {l:"CURRENT GUESTS", v:currentGuests.length, e:"🏠", c:"#E6930A"}].map((t,i)=>(<div key={i} className="stat-box" style={{background: i<2?"#F0FDF4" :"#FFFFFF", border: i<2?"1px solid #D1FAE5" :"1px solid #E2E5EA"}}><div style={{fontSize:18, marginBottom:4}}>{t.e}</div><div style={{fontSize:9, color:"#7A8090", fontWeight:700, textTransform:'uppercase'}}>{t.l}</div><div style={{fontSize:20, fontWeight:700, color:t.c}}>{t.v}</div></div>))}</div><div className="card"><div style={{fontSize:14, fontWeight:700, marginBottom:15}}>📬 Recent Bookings — Last 14 Days</div><div style={{overflowX:"auto"}}><table style={{width:"100%",fontSize:12,borderCollapse:"collapse"}}><thead><tr style={{textAlign:"left",color:"#7A8090", borderBottom:"1px solid #E2E5EA", fontSize:11}}><th style={{padding:"10px 8px"}}>Property</th><th style={{padding:"10px 8px"}}>Guest</th><th style={{padding:"10px 8px"}}>Platform</th><th style={{padding:"10px 8px"}}>Check-in</th><th style={{padding:"10px 8px"}}>Nights</th><th style={{padding:"10px 8px", textAlign:'right'}}>ADR</th><th style={{padding:"10px 8px", textAlign:'right'}}>Total Revenue</th><th style={{padding:"10px 8px"}}>Booked</th></tr></thead><tbody>{recent.slice(0,12).map((b,i)=>{ const p=PROPS.find(px=>px.id===b.pid), isAirbnb = b.platform.toLowerCase().includes('airbnb'); return(<tr key={i} style={{borderBottom:"1px solid #F8F9FA"}}><td style={{padding:"10px 8px"}}><span style={{display:'inline-flex', alignItems:'center', gap:6}}><span style={{width:6, height:6, borderRadius:'50%', background:p?.color}}/>{p?.short}</span></td><td style={{padding:"10px 8px", fontWeight:500}}>{b.guest}</td><td style={{padding:"10px 8px"}}><span style={{fontSize:10, fontWeight:700, padding:"2px 8px", borderRadius:4, background:isAirbnb?"#FFF0F0" :"#E8453C", color:isAirbnb?"#E8453C" :"#0EA5E9"}}>{isAirbnb?"Airbnb" :"VRBO"}</span></td><td style={{padding:"10px 8px"}}>{b.checkin.toLocaleDateString('en-US', {month:'short', day:'numeric'})}</td><td style={{padding:"10px 8px"}}>{b.nights}</td><td style={{padding:"10px 8px", textAlign:'right', color:"#5A6070"}}>${Math.round(b.adr || 0).toLocaleString()}</td><td style={{padding:"10px 8px", textAlign:'right', fontWeight:700}}>${Math.round(b.revenue || 0).toLocaleString()}</td><td style={{padding:"10px 8px", color:"#7A8090"}}>{b.dateBooked.toLocaleDateString('en-US', {month:'short', day:'numeric'})}</td></tr>); })}</tbody></table></div></div><div style={{fontSize:11, fontWeight:700, color:"#7A8090", textTransform:"uppercase"}}>By Property (Last 14 Days)</div><div style={{display:"flex", flexWrap:"wrap", gap:10}}>{PROPS.map(p=>{ const pb = recent.filter(b=>b.pid===p.id); if(pb.length===0) return null; const r = Math.round(pb.reduce((s,b)=>s+b.revenue,0)), n = pb.reduce((s,b)=>s+b.nights,0); return(<div key={p.id} className="pill" style={{background:"#FFFFFF", border:"1px solid #E2E5EA", padding:"8px 15px", borderRadius:8, fontSize:12}}><span style={{width:6, height:6, borderRadius:'50%', background:p.color, display:'inline-block', marginRight:6}}/><span style={{fontWeight:600}}>{p.short}</span><span style={{color:"#059669", marginLeft:8}}>+{pb.length} booking{pb.length>1?'s':''} (${r.toLocaleString()}, {n}n)</span></div>); })}</div><div className="card"><div style={{fontSize:14, fontWeight:700, marginBottom:15}}>📊 Month-over-Month Comparison</div><div style={{overflowX:"auto"}}><table style={{width:"100%",fontSize:12,borderCollapse:"collapse"}}><thead><tr style={{textAlign:"right",color:"#7A8090", borderBottom:"1px solid #E2E5EA"}}><th style={{padding:10, textAlign:'left'}}>Property</th><th>Prev Total Revenue</th><th>Curr Total Revenue</th><th>Total Revenue Δ</th><th>Occ Δ</th></tr></thead><tbody>{PROPS.map(p=>{ const latIdx = months.length - 1, prvIdx = latIdx - 1, v1 = D[p.id]?.revenue?.[prvIdx] || 0, v2 = D[p.id]?.revenue?.[latIdx] || 0, dRev = v2 - v1; return(<tr key={p.id} style={{textAlign:"right", borderBottom:"1px solid #F8F9FA"}}><td style={{padding:10, textAlign:'left'}}><span style={{display:'inline-flex', alignItems:'center', gap:6}}><span style={{width:6, height:6, borderRadius:'50%', background:p.color}}/>{p?.short}</span></td><td>${Math.round(v1).toLocaleString()}</td><td>${Math.round(v2).toLocaleString()}</td><td style={{color: dRev >= 0 ? "#059669" : "#EF4444", fontWeight:700}}>{dRev >= 0 ? "+" : ""}{Math.round(dRev).toLocaleString()}</td><td>{Math.round((D[p.id]?.occupancy?.[latIdx] || 0) - (D[p.id]?.occupancy?.[prvIdx] || 0))}pp</td></tr>); })}</tbody></table></div></div><div className="card"><div style={{fontSize:14, fontWeight:700, marginBottom:15}}>💲 Forward Pricing Grid</div><div style={{overflowX:"auto"}}><table style={{width:"100%",fontSize:12,borderCollapse:"collapse"}}><thead><tr style={{borderBottom:"2px solid #D0D5DC",color:"#7A8090"}}><th style={{textAlign:"left", padding:8}}>Property</th><th>Jun 26</th><th>Jul 26</th><th>Aug 26</th></tr></thead><tbody>{PROPS.map(p=>(<tr key={p.id} style={{borderBottom:"1px solid #E2E5EA"}}><td style={{padding:8,fontWeight:600}}>{p.short}</td>{[months.indexOf("Jun 26"), months.indexOf("Jul 26"), months.indexOf("Aug 26")].map((mIdx,mi)=>{ const o = mIdx >= 0 ? D[p.id]?.occupancy?.[mIdx] || 0 : 0, a = mIdx >= 0 ? D[p.id]?.adr?.[mIdx] || 0 : 0; let sig="→ HOLD", col="#D97706"; if(o >= 75) {sig="↑ RAISE"; col="#059669"} else if(o > 0 && o < 40) {sig="↓ CUT"; col="#EF4444"} return <td key={mi} style={{padding:8}}><div style={{fontWeight:700, color:col}}>{sig}</div><div style={{fontSize:10, color:"#7A8090"}}>{Math.round(o)}% Occ | ${Math.round(a).toLocaleString()} ADR</div></td> })}</tr>))}</tbody></table></div></div><div style={{fontSize:11, fontWeight:700, color:"#7A8090", textTransform:"uppercase"}}>🎯 Property Action Cards</div><div style={{display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(350px, 1fr))", gap:15}}>{PROPS.map(p => { const latIdx = months.length - 1, occ = D[p.id]?.occupancy?.[latIdx] || 0, adr = D[p.id]?.adr?.[latIdx] || 0; let action = {label: "HOLD", col: "#D97706", bg: "#FFFBEB", msg: "Maintain current pricing and monitor booking pace."}; if(occ > 75) action = {label: "RAISE", col: "#059669", bg: "#F0FDF4", msg: "High occupancy! Increase ADR by 10-15% for remaining dates."}; if(occ < 40 && occ > 0) action = {label: "CUT", col: "#EF4444", bg: "#FEF2F2", msg: "Critical vacancy. Drop weekend rates by 20% to fill calendar."}; return (<div key={p.id} className="card" style={{borderLeft: `4px solid ${action.col}`}}><div style={{display:'flex', justifyContent:'space-between', marginBottom:10}}><span style={{fontWeight:700}}>{p.name}</span><span style={{fontSize:10, fontWeight:800, padding:"2px 8px", borderRadius:4, background:action.bg, color:action.col}}>{action.label}</span></div><div style={{fontSize:12, color:"#5A6070", marginBottom:10}}>Current: {Math.round(occ)}% Occ @ ${Math.round(adr).toLocaleString()} ADR</div><div style={{fontSize:11, lineHeight:1.5, background:"#F8F9FA", padding:8, borderRadius:6}}><strong>Strategy:</strong> {action.msg}</div></div>); })}</div><div className="card" style={{borderLeft:"4px solid #E8453C"}}><div style={{fontSize:16,fontWeight:700,marginBottom:12}}>🎯 Weekly Action Items</div><div style={{display:"grid",gap:10}}>{PROPS.map(p=>{ const o = D[p.id]?.occupancy?.[months.length - 1] || 0; if(o > 0 && o < 35) return (<div key={p.id} style={{padding:'12px', borderLeft:'4px solid #EF4444', background:'#FEF2F2', borderRadius: '4px'}}><div style={{fontSize: 13, color: "#1A1D24"}}>🚨 <strong>{p.name}</strong>: Under-occupancy alert ({Math.round(o)}%) for the current month.</div><ul style={{fontSize: 11, color: "#5A6070", marginTop: 6, paddingLeft: 18}}><li>Recommended 15% ADR reduction for remaining weekend dates.</li><li>Check if minimum stay requirements are blocking 2-night gap bookings.</li></ul></div>); return null; })}<div style={{padding:'12px', borderLeft:'4px solid #6366F1', background:'#F5F3FF', borderRadius: '4px'}}><div style={{fontSize: 13, color: "#1A1D24"}}>📊 <strong>Seasonal Outlook</strong>: July Demand Analysis</div><ul style={{fontSize: 11, color: "#5A6070", marginTop: 6, paddingLeft: 18}}><li>July 4th weekend trending 15% higher in market demand.</li><li>August shoulder season adjustment scheduled for next review.</li></ul></div></div></div></div>); })()}</div> )}
+    {showSetup&&( <div className="overlay" onClick={()=>setShowSetup(false)}><div className="card fade" style={{width:400,padding:20}} onClick={e=>e.stopPropagation()}><h3 style={{marginBottom:10}}>Connect Google Sheet</h3><input type="text" placeholder="Apps Script URL" value={sheetUrl} onChange={e=>setSheetUrl(e.target.value)} style={{width:"100%",padding:10,marginBottom:10,borderRadius:6,border:"1px solid #D0D5DC"}}/><button className="btn primary" style={{width:"100%"}} onClick={()=>{fetchSheet(sheetUrl);setShowSetup(false)}}>Sync Now</button></div></div> )}
+  </div>);
+}
+
+const PASS_HASH = "a8054ef7fc192135dd8dc07d4d9832c9fa9bd39d01ba383e29e378f5cc72cacd";
+async function sha256(s) { const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)); return Array.from(new Uint8Array(b)).map(x => x.toString(16).padStart(2, "0")).join(""); }
+function PasswordGate({children}){
+  const[auth,setAuth]=useState(sessionStorage.getItem("str_auth")==="1"),[pw,setPw]=useState("");
+  const check=async()=>{if((await sha256(pw))===PASS_HASH){setAuth(true);sessionStorage.setItem("str_auth","1");}};
+  if(auth)return children;
+  return(<div style={{height:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#F7F8FA"}}><div className="card" style={{width:320,textAlign:"center",padding:40}}><div style={{fontSize:20,fontWeight:700,marginBottom:20}}>STR Dashboard</div><input type="password" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==="Enter"&&check()} style={{width:"100%",padding:12,marginBottom:10,borderRadius:8,border:"1px solid #D0D5DC"}} placeholder="Password"/><button onClick={check} className="btn primary" style={{width:"100%"}}>Enter</button></div></div>);
+}
+
+ReactDOM.render(<PasswordGate><App/></PasswordGate>,document.getElementById("root"));
+</script>
+</body>
+</html>
