@@ -187,11 +187,13 @@ function CleaningView({ D, months, active, rng, bookings, range, setRange }) {
   }, [allFilteredBookings, pageOffset]);
 
   // 3. Calculate Macro Stats requested by instructions
+// 3. Calculate Macro Stats requested by instructions
   const stats = useMemo(() => {
     let grossRevenue = 0;
     let totalCF = 0;
 
     allFilteredBookings.forEach(b => {
+        if (b.isCancelled) return; // 🚨 Protect macro stats from cancelled bookings
         grossRevenue += (b.revenue || 0);
         totalCF += (b.cf || 0);
     });
@@ -205,6 +207,7 @@ function CleaningView({ D, months, active, rng, bookings, range, setRange }) {
     let newCfSum = 0, newCfCount = 0;
 
     (bookings || []).forEach(b => {
+        if (b.isCancelled) return; // 🚨 Protect averages from cancelled bookings
         const isPropSelected = selectedProp === 'all' ? active.includes(b.pid.toLowerCase()) : b.pid.toLowerCase() === selectedProp.toLowerCase();
         if (!isPropSelected) return;
 
@@ -339,25 +342,25 @@ function CleaningView({ D, months, active, rng, bookings, range, setRange }) {
                         <th style={{padding:10,textAlign:"right"}}>Net Revenue</th>
                     </tr>
                 </thead>
-                <tbody>{ledgerPage.length > 0 ? ledgerPage.map((b,i)=>{
+<tbody>{ledgerPage.length > 0 ? ledgerPage.map((b,i)=>{
                     const netRevenue = (b.revenue || 0) - (b.cf || 0);
                     const isFixedRange = b.checkin >= new Date(2025, 8, 1) && b.checkin <= new Date(2026, 11, 31);
                     return (
-                        <tr key={i} style={{borderBottom:"1px solid #E2E5EA"}}>
+                        <tr key={i} style={{borderBottom:"1px solid #E2E5EA", opacity: b.isCancelled ? 0.6 : 1}}>
                             <td style={{padding:10, fontWeight:600}}>{PROPS.find(px=>px.id===b.pid)?.short}</td>
                             <td style={{padding:10}}>{b.checkin.toLocaleDateString()}</td>
                             <td style={{padding:10}}>{b.guest}</td>
-                            <td style={{padding:10}}>{b.typeOfStay || "Vacation"}</td>
-                            <td style={{padding:10}}><span style={{color: '#7A8090', fontWeight: 400}}>{b.damages || "None"}</span></td>
-                            <td style={{padding:10,textAlign:"right", color: '#7A8090', fontWeight: 400}}>$0</td>
-                            <td style={{padding:10,textAlign:"right", fontWeight: 700}}>${Math.round(b.revenue).toLocaleString()}</td>
-                            <td style={{padding:10,textAlign:"right", color: isFixedRange ? "#059669" : "#1A1D24", fontWeight: 700}}>
-                                ${Math.round(b.cf || 0).toLocaleString()}
-                                <span style={{fontSize:8, marginLeft:4, verticalAlign:'middle', color: '#7A8090'}}>
+                            <td style={{padding:10}}>{b.isCancelled ? <span style={{color: "#EF4444", fontWeight: 600}}>Cancelled</span> : (b.typeOfStay || "Vacation")}</td>
+                            <td style={{padding:10}}>{b.isCancelled ? "—" : <span style={{color: '#7A8090', fontWeight: 400}}>{b.damages || "None"}</span>}</td>
+                            <td style={{padding:10,textAlign:"right", color: '#7A8090', fontWeight: 400}}>{b.isCancelled ? "—" : "$0"}</td>
+                            <td style={{padding:10,textAlign:"right", fontWeight: 700}}>{b.isCancelled ? <span style={{color: "#EF4444"}}>Cancelled</span> : `$${Math.round(b.revenue).toLocaleString()}`}</td>
+                            <td style={{padding:10,textAlign:"right", color: b.isCancelled ? "#7A8090" : (isFixedRange ? "#059669" : "#1A1D24"), fontWeight: 700}}>
+                                {b.isCancelled ? "—" : `$${Math.round(b.cf || 0).toLocaleString()}`}
+                                {!b.isCancelled && <span style={{fontSize:8, marginLeft:4, verticalAlign:'middle', color: '#7A8090'}}>
                                     {isFixedRange ? "FIXED" : "LISTING"}
-                                </span>
+                                </span>}
                             </td>
-                            <td style={{padding:10,textAlign:"right", color: "#4F46E5", fontWeight: 700}}>${Math.round(netRevenue).toLocaleString()}</td>
+                            <td style={{padding:10,textAlign:"right", color: b.isCancelled ? "#7A8090" : "#4F46E5", fontWeight: 700}}>{b.isCancelled ? "—" : `$${Math.round(netRevenue).toLocaleString()}`}</td>
                         </tr>
                     );
                 }) : (
@@ -412,14 +415,15 @@ function App(){
       const nights = cleanNum(r[6]), adr = cleanNum(r[13]), revenue = cleanNum(r[revIdx]);
       
       // FIX: EXCLUDE ALL GUESTS WITH $0 OR LESS REVENUE (INCLUDING STRIKETHROUGH/CANCELLATIONS)
-      if (revenue <= 0) continue; 
+      // FIX: Tag $0/cancellations instead of dropping them so the ledger can track them
+      const isCancelled = revenue <= 0;
 
       const ci = new Date(r[4]);
       if(!isNaN(ci.getTime())) {
           let appliedCf;
           if (ci >= startFixed && ci <= endFixed) { appliedCf = AVG_CLEANING_FEES[pid] || cleanNum(r[14]); } 
           else { appliedCf = cleanNum(r[14]); }
-          parsed.push({ pid: pid, guest: r[8] || "Guest", checkin: ci, checkout: new Date(r[5]), dateBooked: new Date(r[2]), platform: r[7] || "Booking", nights: nights, cf: appliedCf, revenue: revenue, adr: adr, typeOfStay: stayTypes[Math.floor(Math.random() * stayTypes.length)], damages: "None" });
+          parsed.push({ pid: pid, guest: r[8] || "Guest", checkin: ci, checkout: new Date(r[5]), dateBooked: new Date(r[2]), platform: r[7] || "Booking", nights: nights, cf: appliedCf, revenue: revenue, adr: adr, typeOfStay: stayTypes[Math.floor(Math.random() * stayTypes.length)], damages: "None", isCancelled: isCancelled });
       }
     }
     return parsed;
