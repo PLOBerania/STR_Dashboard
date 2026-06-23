@@ -184,16 +184,43 @@ const stats = useMemo(() => {
     let grossRevenue = 0;
     let totalCF = 0;
 
+    // 1. Calculate Macro Stats based on current UI selection (Year/Month/Property)
+    // FIX: Using 'ledger' instead of 'filteredBookings' to match the existing code
     ledger.forEach(b => {
         grossRevenue += (b.revenue || 0);
-        totalCF += (b.cf || 0); // Accumulating the live/fixed cleaning fees collected
+        totalCF += (b.cf || 0);
     });
 
     const netRevenue = grossRevenue - totalCF;
     const netMargin = grossRevenue > 0 ? (netRevenue / grossRevenue) * 100 : 0;
 
-    return { grossRevenue, netRevenue, totalCF, netMargin };
-  }, [ledger]);
+    // 2. Calculate Old vs New CF Averages (Using the full bookings array to prevent NaN)
+    const splitDate = new Date(2025, 8, 1); // September 1, 2025 (Month index 8)
+    let oldCfSum = 0, oldCfCount = 0;
+    let newCfSum = 0, newCfCount = 0;
+
+    (bookings || []).forEach(b => {
+        // Only evaluate bookings for properties currently checked in the UI
+        const isPropSelected = selectedProp === 'all' ? active.includes(b.pid.toLowerCase()) : b.pid.toLowerCase() === selectedProp.toLowerCase();
+        if (!isPropSelected) return;
+
+        if (b.checkin < splitDate) {
+            oldCfSum += (b.cf || 0);
+            oldCfCount++;
+        } else {
+            newCfSum += (b.cf || 0);
+            newCfCount++;
+        }
+    });
+
+    const avgOldCF = oldCfCount > 0 ? oldCfSum / oldCfCount : 0;
+    const avgNewCF = newCfCount > 0 ? newCfSum / newCfCount : 0;
+    
+    // Percentage Difference Formula: (New - Old) / Old * 100
+    const cfPctChange = avgOldCF > 0 ? ((avgNewCF - avgOldCF) / avgOldCF) * 100 : 0;
+
+    return { grossRevenue, netRevenue, totalCF, netMargin, avgOldCF, avgNewCF, cfPctChange };
+  }, [ledger, bookings, selectedProp, active]); // FIX: updated dependency to 'ledger'
 
   return (
     <div className="fade" style={{ padding: "16px 20px", maxWidth: 1400, margin: "0 auto" }}>
@@ -248,11 +275,15 @@ const stats = useMemo(() => {
                         </div>)
                 })}
               </div>
-              <div style={{padding: "20px", borderRadius: 10, background: "linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)", color: "white"}}>
-                  <div style={{fontSize: 10, fontWeight: 700, textTransform: "uppercase", opacity: 0.9, letterSpacing: "0.05em", marginBottom: 6}}>Cumulative Selection Impact</div>
-                  <div style={{fontSize: 28, fontWeight: 800}}>${Math.round(stats.totalSavings).toLocaleString()}</div>
-                  <div style={{fontSize: 11, marginTop: 8, opacity: 0.9}}>Comparison between historical baseline vs. current applied fee logic.</div>
-              </div>
+<div style={{padding: "20px", borderRadius: 10, background: "linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)", color: "white"}}>
+    <div style={{fontSize: 10, fontWeight: 700, textTransform: "uppercase", opacity: 0.9, letterSpacing: "0.05em", marginBottom: 6}}>CF Rate Change (New vs Old)</div>
+    <div style={{fontSize: 28, fontWeight: 800}}>
+        {stats.cfPctChange > 0 ? "+" : ""}{stats.cfPctChange.toFixed(1)}%
+    </div>
+    <div style={{fontSize: 11, marginTop: 8, opacity: 0.9}}>
+        Avg Pre-Sept '25: ${Math.round(stats.avgOldCF)} | Avg Sept '25 Onward: ${Math.round(stats.avgNewCF)}
+    </div>
+</div>
           </div>
       </div>
       <div className="card">
