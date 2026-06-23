@@ -445,7 +445,7 @@ function App(){
 const PASS_HASH = "a8054ef7fc192135dd8dc07d4d9832c9fa9bd39d01ba383e29e378f5cc72cacd";
 async function sha256(s) { const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)); return Array.from(new Uint8Array(b)).map(x => x.toString(16).padStart(2, "0")).join(""); }
 function PasswordGate({children}){
-  const[auth,setAuth]=useState(true);
+  const[auth,setAuth]=useState(sessionStorage.getItem("str_auth")==="1"),[pw,setPw]=useState("");
   const check=async()=>{if((await sha256(pw))===PASS_HASH){setAuth(true);sessionStorage.setItem("str_auth","1");}};
   if(auth)return children;
   return(<div style={{height:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#F7F8FA"}}><div className="card" style={{width:320,textAlign:"center",padding:40}}><div style={{fontSize:20,fontWeight:700,marginBottom:20}}>STR Dashboard</div><input type="password" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==="Enter"&&check()} style={{width:"100%",padding:12,marginBottom:10,borderRadius:8,border:"1px solid #D0D5DC"}} placeholder="Password"/><button onClick={check} className="btn primary" style={{width:"100%"}}>Enter</button></div></div>);
