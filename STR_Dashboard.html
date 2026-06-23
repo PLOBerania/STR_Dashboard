@@ -180,17 +180,19 @@ function CleaningView({ D, months, active, rng, bookings, range, setRange }) {
     }).sort((a, b) => b.checkin - a.checkin);
   }, [bookings, selectedProp, active, range, selectedMonth]);
 
-  const stats = useMemo(() => {
-    let totalRevenueSum = 0, totalSavings = 0, oldCostTotal = 0, bookingCount = 0;
+const stats = useMemo(() => {
+    let grossRevenue = 0;
+    let totalCF = 0;
+
     ledger.forEach(b => {
-        totalRevenueSum += (b.revenue || 0);
-        const baseline = BASELINE_CLEANING_FEES[b.pid] || 0;
-        const applied = b.cf || 0;
-        totalSavings += (baseline - applied);
-        oldCostTotal += baseline;
-        bookingCount++;
+        grossRevenue += (b.revenue || 0);
+        totalCF += (b.cf || 0); // Accumulating the live/fixed cleaning fees collected
     });
-    return { totalRevenueSum, totalSavings, savingsPct: oldCostTotal > 0 ? (totalSavings / oldCostTotal) * 100 : 0, bookingCount };
+
+    const netRevenue = grossRevenue - totalCF;
+    const netMargin = grossRevenue > 0 ? (netRevenue / grossRevenue) * 100 : 0;
+
+    return { grossRevenue, netRevenue, totalCF, netMargin };
   }, [ledger]);
 
   return (
@@ -218,14 +220,14 @@ function CleaningView({ D, months, active, rng, bookings, range, setRange }) {
       </div>
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
         {[
-          {l:"Actual Revenue (Col Q)",v:"$"+Math.round(stats.totalRevenueSum).toLocaleString()},
-          {l:"Bookings (Selection)",v:stats.bookingCount, c:"#059669"},
-          {l:"Selection Savings",v:"$"+Math.round(stats.totalSavings).toLocaleString(),c:"#6366F1"},
-          {l:"Efficiency Gain",v:Math.round(stats.savingsPct)+"%",c:"#6366F1"}
-        ].map((s,i)=>(
+          { l: "Gross Revenue", v: "$" + Math.round(stats.grossRevenue).toLocaleString() },
+          { l: "Net Revenue (Excl. CF)", v: "$" + Math.round(stats.netRevenue).toLocaleString(), c: "#059669" },
+          { l: "Total CF Withheld", v: "$" + Math.round(stats.totalCF).toLocaleString(), c: "#6366F1" },
+          { l: "Net Margin", v: Math.round(stats.netMargin) + "%", c: "#E6930A" }
+        ].map((s, i) => (
           <div key={i} className="stat-box">
-            <div style={{fontSize:11,color:"#7A8090",textTransform:"uppercase"}}>{s.l}</div>
-            <div style={{fontSize:20,fontWeight:700,color:s.c}}>{s.v}</div>
+            <div style={{ fontSize: 11, color: "#7A8090", textTransform: "uppercase" }}>{s.l}</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: s.c }}>{s.v}</div>
           </div>
         ))}
       </div>
@@ -264,8 +266,8 @@ function CleaningView({ D, months, active, rng, bookings, range, setRange }) {
                         <th style={{padding:10,textAlign:"left"}}>Guest</th>
                         <th style={{padding:10,textAlign:"left"}}>Stay Type</th>
                         <th style={{padding:10,textAlign:"left"}}>Damages</th>
-                        <th style={{padding:10,textAlign:"right"}}>Damages Price</th>
-                        <th style={{padding:10,textAlign:"right"}}>Total Revenue (Q)</th>
+                        <th style={{padding:10,textAlign:"right"}}>Damages Cost</th>
+                        <th style={{padding:10,textAlign:"right"}}>Gross Revenue</th>
                         <th style={{padding:10,textAlign:"right"}}>Applied CF</th>
                         <th style={{padding:10,textAlign:"right"}}>Net Revenue</th>
                     </tr>
