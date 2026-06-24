@@ -165,6 +165,20 @@ function YoYChart({D,months,pid,metricKey,y1,y2,w=360,h=180}){
 function CleaningView({ D, months, active, rng, bookings, range, setRange }) {
   const [selectedProp, setSelectedProp] = useState('all');
   const [selectedMonth, setSelectedMonth] = useState('All');
+// DYNAMIC YEAR GENERATOR: Calculate years for the Cleaning View
+  let availableYears = [2021, 2022, 2023, 2024, 2025, 2026];
+  if (bookings && bookings.length > 0) {
+      const yearsSet = new Set();
+      bookings.forEach(b => {
+          if (b.checkin && !isNaN(b.checkin.getTime())) {
+              yearsSet.add(b.checkin.getFullYear());
+          }
+      });
+      if (yearsSet.size > 0) {
+          availableYears = Array.from(yearsSet).sort((a, b) => a - b);
+      }
+  }
+
   const ledger = useMemo(() => {
     return (bookings || []).filter(b => {
         const isPropSelected = selectedProp === 'all' ? active.includes(b.pid.toLowerCase()) : b.pid.toLowerCase() === selectedProp.toLowerCase();
@@ -249,9 +263,26 @@ const stats = useMemo(() => {
             ))}
             <span style={{width: 1, height: 14, background: "#D0D5DC", margin: "0 8px"}} />
             <span style={{fontSize: 11, color: "#7A8090", fontWeight: 700, textTransform: "uppercase"}}>Year:</span>
-            {["All","2021","2022","2023","2024","2025","2026"].map(yr=>(
-                <button key={yr} className={`btn sm ${range===yr?"on":""}`} onClick={()=>setRange(yr)}>{yr}</button>
-            ))}
+
+<button 
+        className={`btn sm ${range === "All" ? "on" : ""}`} 
+        onClick={() => setRange("All")}
+    >
+        All
+    </button>
+            
+{availableYears.map(yearNum => {
+    const yr = yearNum.toString();
+    return (
+        <button 
+            key={yr} 
+            className={`btn sm ${range === yr ? "on" : ""}`} 
+            onClick={() => setRange(yr)}
+        >
+            {yr}
+        </button>
+    );
+})}
         </div>
         <div style={{display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap"}}>
             <span style={{fontSize: 11, color: "#7A8090", fontWeight: 700, textTransform: "uppercase"}}>Month:</span>
