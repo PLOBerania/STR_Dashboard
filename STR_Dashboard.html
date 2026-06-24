@@ -353,7 +353,7 @@ const stats = useMemo(() => {
           </div>
       </div>
       <div className="card">
-        <div style={{fontSize:14,fontWeight:600,marginBottom:10}}>Recent Cleaning Fee Ledger (Excludes Cancellations & $0 Stays)</div>
+        <div style={{fontSize:14,fontWeight:600,marginBottom:10}}>Recent Cleaning Fee Ledger</div>
         <div style={{maxHeight:400,overflowY:"auto"}}>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                 <thead>
@@ -369,10 +369,40 @@ const stats = useMemo(() => {
                         <th style={{padding:10,textAlign:"right"}}>Net Revenue</th>
                     </tr>
                 </thead>
-                <tbody>{ledger.map((b,i)=>{
-                const netRevenue = (b.revenue || 0) - (b.cf || 0), isFixedRange = b.checkin >= new Date(2025, 8, 1) && b.checkin <= new Date(2026, 11, 31);
-                return (<tr key={i} style={{borderBottom:"1px solid #E2E5EA"}}><td style={{padding:10, fontWeight:600}}>{PROPS.find(px=>px.id===b.pid)?.short}</td><td style={{padding:10}}>{b.checkin.toLocaleDateString()}</td><td style={{padding:10}}>{b.guest}</td><td style={{padding:10}}>{b.typeOfStay}</td><td style={{padding:10}}><span style={{color: '#7A8090', fontWeight: 400}}>None</span></td><td style={{padding:10,textAlign:"right", color: '#7A8090', fontWeight: 400}}>$0</td><td style={{padding:10,textAlign:"right", fontWeight: 700}}>{`$${Math.round(b.revenue).toLocaleString()}`}</td><td style={{padding:10,textAlign:"right", color: isFixedRange ? "#059669" : "#1A1D24", fontWeight: 700}}>${Math.round(b.cf || 0).toLocaleString()} <span style={{fontSize:8, marginLeft:4, verticalAlign:'middle', color: '#7A8090'}}>{isFixedRange ? "FIXED RATE" : "LISTING CF"}</span></td><td style={{padding:10,textAlign:"right", color: "#4F46E5", fontWeight: 700}}>${Math.round(netRevenue).toLocaleString()}</td></tr>);
-                })}</tbody>
+<tbody>
+    {ledger.map((b, i) => {
+        const netRevenue = (b.revenue || 0) - (b.cf || 0);
+        const isFixedRange = b.checkin >= new Date(2025, 8, 1) && b.checkin <= new Date(2026, 11, 31);
+        
+        return (
+            <tr key={i} style={{borderBottom: "1px solid #E2E5EA"}}>
+                <td style={{padding: 10, fontWeight: 600}}>{PROPS.find(px => px.id === b.pid)?.short}</td>
+                <td style={{padding: 10}}>{b.checkin.toLocaleDateString()}</td>
+                <td style={{padding: 10}}>{b.guest}</td>
+                <td style={{padding: 10}}>{b.typeOfStay}</td>
+                <td style={{padding: 10}}><span style={{color: '#7A8090', fontWeight: 400}}>None</span></td>
+                <td style={{padding: 10, textAlign: "right", color: '#7A8090', fontWeight: 400}}>$0</td>
+                <td style={{padding: 10, textAlign: "right", fontWeight: 700}}>{`$${Math.round(b.revenue).toLocaleString()}`}</td>
+                
+                {/* UPDATED APPLIED CF CELL */}
+                <td style={{padding: 10, textAlign: "right", color: isFixedRange ? "#059669" : "#1A1D24", fontWeight: 700}}>
+                    {b.isCancelled ? (
+                        <span style={{ color: "red", fontWeight: "500" }}>Cancelled</span>
+                    ) : (
+                        <>
+                            ${Math.round(b.cf || 0).toLocaleString()} 
+                            <span style={{fontSize: 8, marginLeft: 4, verticalAlign: 'middle', color: '#7A8090'}}>
+                                {isFixedRange ? "FIXED RATE" : "LISTING CF"}
+                            </span>
+                        </>
+                    )}
+                </td>
+                
+                <td style={{padding: 10, textAlign: "right", color: "#4F46E5", fontWeight: 700}}>${Math.round(netRevenue).toLocaleString()}</td>
+            </tr>
+        );
+    })}
+</tbody>
             </table>
         </div>
       </div>
@@ -420,7 +450,6 @@ const parseBookings = useCallback((raw) => {
       
       const rawPropString = r[0].toString().toLowerCase();
       
-      // 1. BULLETPROOF MATCHING
       const matchedProp = PROPS.find(p => {
           const pid = p.id.toLowerCase();
           const pShort = p.short.toLowerCase();
@@ -431,15 +460,16 @@ const parseBookings = useCallback((raw) => {
       const pid = matchedProp ? matchedProp.id : null; 
       if (!pid) continue;
 
-// 2. ADAPTER PATTERN: Dynamically map columns based on exact spreadsheet layouts
-      let adrIdx = 13, cfIdx = 14, revIdx = 16; // Standard Layout 
+      let adrIdx = 13, cfIdx = 14, revIdx = 16; 
 
       if (pid === "burton" || pid === "briarwood") {
-          // Handle properties with shifted financial columns
           adrIdx = 14; cfIdx = 15; revIdx = 17;
       }
       
       const nights = cleanNum(r[6]);
+      const rawAdrStr = (r[adrIdx] || "").toString().toLowerCase().trim();
+      const isCancelled = rawAdrStr === "cancelled";
+      
       const adr = cleanNum(r[adrIdx]);
       const rawRevenue = cleanNum(r[revIdx]);
       const rawCf = cleanNum(r[cfIdx]);
@@ -450,7 +480,12 @@ const parseBookings = useCallback((raw) => {
           if (ci >= startFixed && ci <= endFixed) { appliedCf = AVG_CLEANING_FEES[pid] || rawCf; } 
           else { appliedCf = rawCf; }
           
-          const isCancelled = rawRevenue <= 0; 
+          if (isCancelled) {
+              // IMPORTANT: Keep this as a number (0) so Net Revenue calculates properly
+              appliedCf = 0; 
+          }
+          
+          const cancelledBadge = <span style={{ color: "red", fontWeight: "500" }}>Cancelled</span>;
           
           parsed.push({ 
               pid: pid, 
@@ -463,7 +498,8 @@ const parseBookings = useCallback((raw) => {
               cf: appliedCf, 
               revenue: rawRevenue, 
               adr: adr, 
-              typeOfStay: stayTypes[Math.floor(Math.random() * stayTypes.length)], 
+              // We can safely leave the badge here because you aren't doing math on stay types
+              typeOfStay: isCancelled ? cancelledBadge : stayTypes[Math.floor(Math.random() * stayTypes.length)], 
               damages: "None",
               isCancelled: isCancelled
           });
