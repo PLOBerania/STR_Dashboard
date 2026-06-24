@@ -380,7 +380,8 @@ const parseBookings = useCallback((raw) => {
         return isNaN(n) ? 0 : n;
     };
     
-    const revIdx = 16, parsed = [], stayTypes = ["Vacation", "Remote Work", "Family Gathering", "Temporary Housing", "Business Trip", "Event Gathering", "Party"], startFixed = new Date(2025, 8, 1), endFixed = new Date(2026, 11, 31);
+    const parsed = [], stayTypes = ["Vacation", "Remote Work", "Family Gathering", "Temporary Housing", "Business Trip", "Event Gathering", "Party"];
+    const startFixed = new Date(2025, 8, 1), endFixed = new Date(2026, 11, 31);
     
     for (let i = 1; i < raw.length; i++) {
       const r = raw[i];
@@ -388,27 +389,37 @@ const parseBookings = useCallback((raw) => {
       
       const rawPropString = r[0].toString().toLowerCase();
       
-      // 1. BULLETPROOF MATCHING: Checks ID, Short Name, AND Street Number
+      // 1. BULLETPROOF MATCHING
       const matchedProp = PROPS.find(p => {
           const pid = p.id.toLowerCase();
           const pShort = p.short.toLowerCase();
-          const pNum = p.name.split(" ")[0]; // Extracts "1010", "86", etc.
+          const pNum = p.name.split(" ")[0]; 
           return rawPropString.includes(pid) || rawPropString.includes(pShort) || rawPropString.includes(pNum);
       });
       
       const pid = matchedProp ? matchedProp.id : null; 
       if (!pid) continue;
+
+// 2. ADAPTER PATTERN: Dynamically map columns based on exact spreadsheet layouts
+      let adrIdx = 13, cfIdx = 14, revIdx = 16; // Standard Layout 
+
+      if (pid === "burton" || pid === "briarwood") {
+          // Handle properties with shifted financial columns
+          adrIdx = 14; cfIdx = 15; revIdx = 17;
+      }
       
-      const nights = cleanNum(r[6]), adr = cleanNum(r[13]), revenue = cleanNum(r[revIdx]);
-      
-      // 2. STOP DELETING CANCELLATIONS: Tag them instead
-      const isCancelled = revenue <= 0; 
+      const nights = cleanNum(r[6]);
+      const adr = cleanNum(r[adrIdx]);
+      const rawRevenue = cleanNum(r[revIdx]);
+      const rawCf = cleanNum(r[cfIdx]);
 
       const ci = new Date(r[4]);
       if(!isNaN(ci.getTime())) {
           let appliedCf;
-          if (ci >= startFixed && ci <= endFixed) { appliedCf = AVG_CLEANING_FEES[pid] || cleanNum(r[14]); } 
-          else { appliedCf = cleanNum(r[14]); }
+          if (ci >= startFixed && ci <= endFixed) { appliedCf = AVG_CLEANING_FEES[pid] || rawCf; } 
+          else { appliedCf = rawCf; }
+          
+          const isCancelled = rawRevenue <= 0; 
           
           parsed.push({ 
               pid: pid, 
@@ -419,11 +430,11 @@ const parseBookings = useCallback((raw) => {
               platform: r[7] || "Booking", 
               nights: nights, 
               cf: appliedCf, 
-              revenue: revenue, 
+              revenue: rawRevenue, 
               adr: adr, 
               typeOfStay: stayTypes[Math.floor(Math.random() * stayTypes.length)], 
               damages: "None",
-              isCancelled: isCancelled // Pass this to the UI!
+              isCancelled: isCancelled
           });
       }
     }
