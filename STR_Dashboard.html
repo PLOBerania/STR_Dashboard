@@ -419,16 +419,48 @@ function App(){
     return result;
   },[reviewsRaw,monitoringData]);
 
-  const parseRows=useCallback((rows)=>{
-    const pids=["moreland","jwd","burton","briarwood","patterson","paces"], monthsArr=[], data={}; pids.forEach(pid=>{data[pid]={revenue:[],revenueExCF:[],occupancy:[],adr:[],revpar:[],nights:[],bookingWindow:[]};});
-    let hR=-1;for(let i=0;i<Math.min(rows.length,10);i++){if(rows[i].map(c=>((c||"")+"").toLowerCase()).includes("month")){hR=i;break;}}
+const parseRows=useCallback((rows)=>{
+    const pids=["moreland","jwd","burton","briarwood","patterson","paces"], monthsArr=[], data={}; 
+    pids.forEach(pid=>{data[pid]={revenue:[],revenueExCF:[],occupancy:[],adr:[],revpar:[],nights:[],bookingWindow:[]};});
+    
+    let hR=-1;
+    for(let i=0;i<Math.min(rows.length,10);i++){
+        if(rows[i].map(c=>((c||"")+"").toLowerCase()).includes("month")){hR=i;break;}
+    }
     if(hR<0)return{months:[],data};
-    const mC=rows[hR].map(c=>((c||"")+"").toLowerCase()).indexOf("month"), mO=["nights","occupancy","bookingWindow","revenue","adr","revpar","revenueExCF"];
+    
+    const mC=rows[hR].map(c=>((c||"")+"").toLowerCase()).indexOf("month");
+    const mO=["nights","occupancy","bookingWindow","revenue","adr","revpar","revenueExCF"];
+    
     for(let i=hR+1;i<rows.length;i++){
       const r=rows[i];if(!r[mC])continue;
-      let mRaw=r[mC].toString().replace(",","");const pts=mRaw.split(/[\s,]+/);let mLbl=mRaw; if(pts.length>=2){mLbl=pts[0].substring(0,3)+" "+pts[pts.length-1].slice(-2);} monthsArr.push(mLbl);
+      let mRaw=r[mC].toString().replace(",","");const pts=mRaw.split(/[\s,]+/);let mLbl=mRaw; 
+      if(pts.length>=2){mLbl=pts[0].substring(0,3)+" "+pts[pts.length-1].slice(-2);} monthsArr.push(mLbl);
       mO.forEach((mK,mI)=>{pids.forEach((pid,pI)=>{ const cI=mC+1+(mI*6)+pI, raw=r[cI]; let v=null; if(raw!=null&&raw!==""){const c=raw.toString().replace(/[$,%\s]/g,"");v=parseFloat(c);} if(mK==="occupancy"&&v<=1)v*=100; data[pid][mK].push(v!=null&&!isNaN(v)?v:0); });});
     }
+
+    // --- NEW CODE: DYNAMIC FUTURE DATE PADDER ---
+    // Automatically extends the dashboard timeline through 2027 so the UI never breaks
+    const targetYear = 27; 
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    
+    if (monthsArr.length > 0) {
+        let lastMonthStr = monthsArr[monthsArr.length - 1];
+        let lastYr = parseInt(lastMonthStr.slice(-2));
+        let lastMoIdx = monthNames.findIndex(m => lastMonthStr.startsWith(m));
+        
+        while (lastYr < targetYear || (lastYr === targetYear && lastMoIdx < 11)) {
+            lastMoIdx++;
+            if (lastMoIdx > 11) { lastMoIdx = 0; lastYr++; }
+            
+            monthsArr.push(`${monthNames[lastMoIdx]} ${lastYr}`);
+            pids.forEach(pid => {
+                mO.forEach(mK => data[pid][mK].push(0)); // Injects $0 for missing future months
+            });
+        }
+    }
+    // ---------------------------------------------
+
     return{months:monthsArr,data};
   },[]);
 
