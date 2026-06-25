@@ -312,7 +312,7 @@ const stats = useMemo(() => {
           </div>
           <div className="card" style={{background: "#F8FAFC", padding: "20px"}}>
               <div style={{fontSize:14,fontWeight:700,marginBottom:12, color:"#1E293B"}}>Applied Fee Methodology</div>
-              <div style={{fontSize:11, color:"#64748B", marginBottom: 20}}>Sept 2025 – Dec 2026 uses <strong>Optimized Fixed Rates</strong>. All other periods (including 2021) use live <strong>Listing CF</strong> from Column O.</div>
+              <div style={{fontSize:11, color:"#64748B", marginBottom: 20}}>Sept 2025 onwards uses <strong>Optimized Fixed Rates</strong>. All other periods (including 2021) use live <strong>Listing CF</strong>.</div>
 <div style={{display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 20}}>
                 {PROPS.map(p => {
                     // FIX: Replaced Val's hardcoded constants with dynamic actuals
@@ -371,8 +371,7 @@ const stats = useMemo(() => {
                 </thead>
 <tbody>
     {ledger.map((b, i) => {
-        const netRevenue = (b.revenue || 0) - (b.cf || 0);
-        const isFixedRange = b.checkin >= new Date(2025, 8, 1) && b.checkin <= new Date(2026, 11, 31);
+const netRevenue = (b.revenue || 0) - (b.cf || 0), isFixedRange = b.checkin >= new Date(2025, 8, 1);
         
         return (
             <tr key={i} style={{borderBottom: "1px solid #E2E5EA"}}>
@@ -474,7 +473,7 @@ const parseBookings = useCallback((raw) => {
     };
     
     const parsed = [], stayTypes = ["Vacation", "Remote Work", "Family Gathering", "Temporary Housing", "Business Trip", "Event Gathering", "Party"];
-    const startFixed = new Date(2025, 8, 1), endFixed = new Date(2026, 11, 31);
+    const startFixed = new Date(2025, 8, 1);
     
     for (let i = 1; i < raw.length; i++) {
       const r = raw[i];
@@ -509,7 +508,7 @@ const parseBookings = useCallback((raw) => {
       const ci = new Date(r[4]);
       if(!isNaN(ci.getTime())) {
           let appliedCf;
-          if (ci >= startFixed && ci <= endFixed) { appliedCf = AVG_CLEANING_FEES[pid] || rawCf; } 
+          if (ci >= startFixed) { appliedCf = AVG_CLEANING_FEES[pid] || rawCf; } 
           else { appliedCf = rawCf; }
           
           if (isCancelled) {
