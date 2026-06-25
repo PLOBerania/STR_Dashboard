@@ -255,43 +255,37 @@ const stats = useMemo(() => {
   return (
     <div className="fade" style={{ padding: "16px 20px", maxWidth: 1400, margin: "0 auto" }}>
       <div style={{marginBottom:18, display: "flex", flexDirection: "column", gap: 12}}>
-        <div style={{display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap"}}>
-            <span style={{fontSize: 11, color: "#7A8090", fontWeight: 700, textTransform: "uppercase"}}>Property:</span>
-            <button className={`btn sm ${selectedProp === 'all' ? "on" : ""}`} onClick={() => setSelectedProp('all')}>All</button>
-            {PROPS.map(p => (
+    
+    {/* Property Row */}
+    <div style={{display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 8, flexWrap: "wrap"}}>
+        <span style={{fontSize: 11, color: "#7A8090", fontWeight: 700, textTransform: "uppercase", width: 60}}>Property:</span>
+        <button className={`btn sm ${selectedProp === 'all' ? "on" : ""}`} onClick={() => setSelectedProp('all')}>All</button>
+        {PROPS.map(p => (
             <button key={p.id} className={`btn sm ${selectedProp === p.id ? "on" : ""}`} onClick={() => setSelectedProp(p.id)}>{p.short}</button>
-            ))}
-            <span style={{width: 1, height: 14, background: "#D0D5DC", margin: "0 8px"}} />
-            <span style={{fontSize: 11, color: "#7A8090", fontWeight: 700, textTransform: "uppercase"}}>Year:</span>
+        ))}
+    </div>
+    
+    {/* Month Row */}
+    <div style={{display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 8, flexWrap: "wrap"}}>
+        <span style={{fontSize: 11, color: "#7A8090", fontWeight: 700, textTransform: "uppercase", width: 60}}>Month:</span>
+        <button className={`btn sm ${selectedMonth === 'All' ? "on" : ""}`} onClick={() => setSelectedMonth('All')}>All</button>
+        {MONTH_LABELS.map(ml => (
+            <button key={ml} className={`btn sm ${selectedMonth === ml ? "on" : ""}`} onClick={() => setSelectedMonth(ml)}>{ml}</button>
+        ))}
+    </div>
 
-<button 
-        className={`btn sm ${range === "All" ? "on" : ""}`} 
-        onClick={() => setRange("All")}
-    >
-        All
-    </button>
-            
-{availableYears.map(yearNum => {
-    const yr = yearNum.toString();
-    return (
-        <button 
-            key={yr} 
-            className={`btn sm ${range === yr ? "on" : ""}`} 
-            onClick={() => setRange(yr)}
-        >
-            {yr}
-        </button>
-    );
-})}
-        </div>
-        <div style={{display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap"}}>
-            <span style={{fontSize: 11, color: "#7A8090", fontWeight: 700, textTransform: "uppercase"}}>Month:</span>
-            <button className={`btn sm ${selectedMonth === 'All' ? "on" : ""}`} onClick={() => setSelectedMonth('All')}>All</button>
-            {MONTH_LABELS.map(ml => (
-                <button key={ml} className={`btn sm ${selectedMonth === ml ? "on" : ""}`} onClick={() => setSelectedMonth(ml)}>{ml}</button>
-            ))}
-        </div>
-      </div>
+    {/* Year Row */}
+    <div style={{display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 8, flexWrap: "wrap", width: "100%"}}>
+        <span style={{fontSize: 11, color: "#7A8090", fontWeight: 700, textTransform: "uppercase", width: 60}}>Year:</span>
+        <button className={`btn sm ${range === "All" ? "on" : ""}`} onClick={() => setRange("All")}>All</button>
+        {availableYears.map(yearNum => {
+            const yr = yearNum.toString();
+            return (
+                <button key={yr} className={`btn sm ${range === yr ? "on" : ""}`} onClick={() => setRange(yr)}>{yr}</button>
+            );
+        })}
+    </div>
+</div>
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
         {[
           { l: "Gross Revenue", v: "$" + Math.round(stats.grossRevenue).toLocaleString() },
