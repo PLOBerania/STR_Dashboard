@@ -119,13 +119,13 @@ function LineChart({D,months,metricKey,sI,eI,activeProps,width=820,height=320}){
   </div>);
 }
 
-function PortfolioBar({D,months,activeProps,sI,eI,range,containerW=880,metricKey="revenue",height=360,hideTitle=false}){
+function PortfolioBar({D,months,activeProps,sI,eI,range,containerW=880,metricKey="revenue",height=360,hideTitle=false, showCleaningMetrics=false}){
   const[hov,setHov]=useState(null);const wrapRef=useRef(null);const cnt=eI-sI+1;const w=Math.max(containerW,cnt*42);const pad={t:30,r:20,b:76,l:60};const cW=w-pad.l-pad.r,cH=height-pad.t-pad.b;const gap=cW/cnt,bW=Math.min(32,gap*.75);
   const bars=[];let maxTot=0;for(let i=sI;i<=eI;i++){let tot=0;const segs=[];[...PROPS].reverse().forEach(p=>{if(!activeProps.includes(p.id))return;const v=D[p.id]?.[metricKey]?.[i]||0;if(v){segs.push({pid:p.id,color:p.color,short:p.short,v,y0:tot});tot+=v;}});bars.push({i,segs,tot});if(tot>maxTot)maxTot=tot;}
   const mx=maxTot*1.15||1;const yS=v=>pad.t+cH-(v/mx)*cH;
   const lblStep=cnt<=14?1:cnt<=24?2:3;
 
-  return(<div className={`chart-wrap`} ref={wrapRef} onMouseLeave={()=>setHov(null)} onMouseMove={e=>{if(!wrapRef.current) return; const rect=wrapRef.current.getBoundingClientRect();const mx2=e.clientX-rect.left;let bI=-1,bD=Infinity;bars.forEach((b,bi)=>{const xC=pad.l+bi*gap+gap/2;const dist=Math.abs(xC-mx2);if(dist<bD){bD=dist;bI=bi;}});setHov(bD<gap*.8?bI:null);}}>
+  return(<div className="chart-wrap" ref={wrapRef} onMouseLeave={()=>setHov(null)} onMouseMove={e=>{if(!wrapRef.current) return; const rect=wrapRef.current.getBoundingClientRect();const mx2=e.clientX-rect.left;let bI=-1,bD=Infinity;bars.forEach((b,bi)=>{const xC=pad.l+bi*gap+gap/2;const dist=Math.abs(xC-mx2);if(dist<bD){bD=dist;bI=bi;}});if(bD<gap*.8){setHov({idx:bI,x:pad.l+bI*gap+gap/2});}else{setHov(null);}}}>
     {!hideTitle && <div style={{fontSize:14,fontWeight:600,marginBottom:15}}>{MET.find(m=>m.key===metricKey)?.label} — {range}</div>}
     <div style={{overflowX:"auto"}}><svg width={w} height={height}>
       {[0,.25,.5,.75,1].map((p,i)=><g key={i}><line x1={pad.l} x2={w-pad.r} y1={yS(mx*p)} y2={yS(mx*p)} stroke="#E2E5EA"/><text x={pad.l-8} y={yS(mx*p)+4} fill="#8A90A0" fontSize="10" textAnchor="end">${Math.round(mx*p).toLocaleString()}</text></g>)}
@@ -135,7 +135,7 @@ function PortfolioBar({D,months,activeProps,sI,eI,range,containerW=880,metricKey
             {bar.segs.map((s,si)=>{
                 const y1=yS(s.y0+s.v); const y2=s.y0 === 0 ? yS(0) : yS(s.y0); const h=Math.max(1, y2-y1);
                 return<g key={s.pid}>
-                    <rect x={x} y={y1} width={bW} height={h} fill={s.color} opacity={hov===bi?1:0.85}/>
+                    <rect x={x} y={y1} width={bW} height={h} fill={s.color} opacity={hov && hov.idx===bi?1:0.85}/>
                     {h>18 && <text x={xC} y={y1+h/2+4} fill="#FFF" fontSize="9" fontWeight="700" textAnchor="middle" style={{pointerEvents:'none'}}>${Math.round(s.v).toLocaleString()}</text>}
                 </g>
             })}
@@ -144,6 +144,38 @@ function PortfolioBar({D,months,activeProps,sI,eI,range,containerW=880,metricKey
           </g>
       })}
     </svg></div>
+    {hov && (
+      <div className="chart-tip" style={{left:hov.x, top:pad.t}}>
+        <div style={{fontWeight:700,fontSize:10, marginBottom: 6, paddingBottom: 4, borderBottom: "1px solid #3A4050"}}>{months[bars[hov.idx].i]}</div>
+        {showCleaningMetrics ? (() => {
+            let mGross = 0; let mNet = 0; const mIdx = bars[hov.idx].i;
+            activeProps.forEach(pid => { mGross += (D[pid]?.revenue?.[mIdx] || 0); mNet += (D[pid]?.revenueExCF?.[mIdx] || 0); });
+            const pct = mGross > 0 ? ((mNet / mGross) * 100).toFixed(1) : 0;
+            return (
+                <>
+                    <div className="tip-row"><span className="tip-dot" style={{background:"#94A3B8"}}/>Gross: ${Math.round(mGross).toLocaleString()}</div>
+                    <div className="tip-row"><span className="tip-dot" style={{background:"#059669"}}/>Net: ${Math.round(mNet).toLocaleString()}</div>
+                    <div className="tip-row" style={{marginTop: 4}}><span style={{fontWeight: 700}}>Margin: {pct}%</span></div>
+                </>
+            );
+        })() : (
+            <>
+                {bars[hov.idx].segs.map(s => (
+                    <div key={s.pid} className="tip-row">
+                        <span className="tip-dot" style={{background:s.color}}/>
+                        <span style={{width: 60}}>{s.short}:</span> 
+                        <span style={{marginLeft: "auto", fontWeight: 700}}>${Math.round(s.v).toLocaleString()}</span>
+                    </div>
+                ))}
+                {bars[hov.idx].segs.length > 1 && (
+                    <div className="tip-row" style={{marginTop: 6, paddingTop: 6, borderTop: "1px solid #3A4050", fontWeight: 700, justifyContent: "space-between"}}>
+                        <span>Total:</span> <span>${Math.round(bars[hov.idx].tot).toLocaleString()}</span>
+                    </div>
+                )}
+            </>
+        )}
+      </div>
+    )}
   </div>);
 }
 
@@ -308,7 +340,7 @@ const stats = useMemo(() => {
       <div style={{display: "flex", flexDirection: "column", gap: 16, marginBottom: 16}}>
           <div className="card">
               <div style={{fontSize:14,fontWeight:700,marginBottom:15}}>Selection Net Revenue Performance — {selectedMonth} {range}</div>
-              <AutoWidth>{cw=><PortfolioBar D={D} months={months} activeProps={selectedProp === 'all' ? active : [selectedProp]} sI={rng.s} eI={rng.e} range={range} containerW={cw} metricKey="revenueExCF" height={280} hideTitle={true}/>}</AutoWidth>
+              <AutoWidth>{cw=><PortfolioBar D={D} months={months} activeProps={selectedProp === 'all' ? active : [selectedProp]} sI={rng.s} eI={rng.e} range={range} containerW={cw} metricKey="revenueExCF" height={280} hideTitle={true} showCleaningMetrics={true}/>}</AutoWidth>
           </div>
           <div className="card" style={{background: "#F8FAFC", padding: "20px"}}>
               <div style={{fontSize:14,fontWeight:700,marginBottom:12, color:"#1E293B"}}>Applied Fee Methodology</div>
