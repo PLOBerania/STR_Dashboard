@@ -284,59 +284,55 @@ const stats = useMemo(() => {
     return result;
   }, []);
 
-  return (
+return (
     <div className="fade" style={{ padding: "16px 20px", maxWidth: 1400, margin: "0 auto" }}>
-      <div style={{marginBottom:18, display: "flex", flexDirection: "column", gap: 12}}>
-        <div style={{display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap"}}>
-            <span style={{fontSize: 11, color: "#7A8090", fontWeight: 700, textTransform: "uppercase"}}>Property:</span>
-            <button className={`btn sm ${selectedProp === 'all' ? "on" : ""}`} onClick={() => setSelectedProp('all')}>All</button>
-            {PROPS.map(p => (
-            <button key={p.id} className={`btn sm ${selectedProp === p.id ? "on" : ""}`} onClick={() => setSelectedProp(p.id)}>{p.short}</button>
-            ))}
-            <span style={{width: 1, height: 14, background: "#D0D5DC", margin: "0 8px"}} />
-            <span style={{fontSize: 11, color: "#7A8090", fontWeight: 700, textTransform: "uppercase"}}>Year:</span>
+      {/* --- NEW STICKY WRAPPER --- */}
+<div style={{ position: "sticky", top: 51, background: "#F7F8FA", zIndex: 90, margin: "-16px -20px 16px -20px", padding: "16px 20px 12px 20px", borderBottom: "1px solid #E2E5EA", borderLeft: "1px solid #E2E5EA", borderRight: "1px solid #E2E5EA", borderRadius: "0 0 10px 10px" }}>
+        
+        <div style={{marginBottom:18, display: "flex", flexDirection: "column", gap: 12}}>
+          <div style={{display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap"}}>
+              <span style={{fontSize: 11, color: "#7A8090", fontWeight: 700, textTransform: "uppercase"}}>Property:</span>
+              <button className={`btn sm ${selectedProp === 'all' ? "on" : ""}`} onClick={() => setSelectedProp('all')}>All</button>
+              {PROPS.map(p => (
+              <button key={p.id} className={`btn sm ${selectedProp === p.id ? "on" : ""}`} onClick={() => setSelectedProp(p.id)}>{p.short}</button>
+              ))}
+              <span style={{width: 1, height: 14, background: "#D0D5DC", margin: "0 8px"}} />
+              <span style={{fontSize: 11, color: "#7A8090", fontWeight: 700, textTransform: "uppercase"}}>Year:</span>
 
-<button 
-        className={`btn sm ${range === "All" ? "on" : ""}`} 
-        onClick={() => setRange("All")}
-    >
-        All
-    </button>
-            
-{availableYears.map(yearNum => {
-    const yr = yearNum.toString();
-    return (
-        <button 
-            key={yr} 
-            className={`btn sm ${range === yr ? "on" : ""}`} 
-            onClick={() => setRange(yr)}
-        >
-            {yr}
-        </button>
-    );
-})}
-        </div>
-        <div style={{display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap"}}>
-            <span style={{fontSize: 11, color: "#7A8090", fontWeight: 700, textTransform: "uppercase"}}>Month:</span>
-            <button className={`btn sm ${selectedMonth === 'All' ? "on" : ""}`} onClick={() => setSelectedMonth('All')}>All</button>
-            {MONTH_LABELS.map(ml => (
-                <button key={ml} className={`btn sm ${selectedMonth === ml ? "on" : ""}`} onClick={() => setSelectedMonth(ml)}>{ml}</button>
-            ))}
-        </div>
-      </div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-        {[
-          { l: "Gross Revenue", v: "$" + Math.round(stats.grossRevenue).toLocaleString() },
-          { l: "Net Revenue (Excl. CF)", v: "$" + Math.round(stats.netRevenue).toLocaleString(), c: "#059669" },
-          { l: "Total CF Withheld", v: "$" + Math.round(stats.totalCF).toLocaleString(), c: "#6366F1" },
-          { l: "Net Margin", v: Math.round(stats.netMargin) + "%", c: "#E6930A" }
-        ].map((s, i) => (
-          <div key={i} className="stat-box">
-            <div style={{ fontSize: 11, color: "#7A8090", textTransform: "uppercase" }}>{s.l}</div>
-            <div style={{ fontSize: 20, fontWeight: 700, color: s.c }}>{s.v}</div>
+              <button className={`btn sm ${range === "All" ? "on" : ""}`} onClick={() => setRange("All")}>All</button>
+                      
+              {availableYears.map(yearNum => {
+                  const yr = yearNum.toString();
+                  return (
+                      <button key={yr} className={`btn sm ${range === yr ? "on" : ""}`} onClick={() => setRange(yr)}>{yr}</button>
+                  );
+              })}
           </div>
-        ))}
+          <div style={{display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap"}}>
+              <span style={{fontSize: 11, color: "#7A8090", fontWeight: 700, textTransform: "uppercase"}}>Month:</span>
+              <button className={`btn sm ${selectedMonth === 'All' ? "on" : ""}`} onClick={() => setSelectedMonth('All')}>All</button>
+              {MONTH_LABELS.map(ml => (
+                  <button key={ml} className={`btn sm ${selectedMonth === ml ? "on" : ""}`} onClick={() => setSelectedMonth(ml)}>{ml}</button>
+              ))}
+          </div>
+        </div>
+        
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {[
+            { l: "Gross Revenue", v: "$" + Math.round(stats.grossRevenue).toLocaleString() },
+            { l: "Net Revenue (Excl. CF)", v: "$" + Math.round(stats.netRevenue).toLocaleString(), c: "#059669" },
+            { l: "Total CF Withheld", v: "$" + Math.round(stats.totalCF).toLocaleString(), c: "#6366F1" },
+            { l: "Net Margin", v: Math.round(stats.netMargin) + "%", c: "#E6930A" }
+          ].map((s, i) => (
+            <div key={i} className="stat-box">
+              <div style={{ fontSize: 11, color: "#7A8090", textTransform: "uppercase" }}>{s.l}</div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: s.c }}>{s.v}</div>
+            </div>
+          ))}
+        </div>
+
       </div>
+
       <div style={{display: "flex", flexDirection: "column", gap: 16, marginBottom: 16}}>
           <div className="card">
               <div style={{fontSize:14,fontWeight:700,marginBottom:15}}>Selection Net Revenue Performance — {selectedMonth} {range}</div>
