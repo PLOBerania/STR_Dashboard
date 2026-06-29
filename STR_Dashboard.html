@@ -246,28 +246,15 @@ const ledger = useMemo(() => {
     }).sort((a, b) => b.checkin - a.checkin);
   }, [bookings, selectedProp, active, range, selectedMonth, customStart, customEnd]);
 
-  const stats = useMemo(() => {
+const stats = useMemo(() => {
     let grossRevenue = 0;
     let netRevenue = 0;
 
-    // Direct day-accurate calculation matching the custom selection range
-    if (customStart || customEnd) {
-        ledger.forEach(b => {
-            grossRevenue += (b.revenue || 0);
-            netRevenue += ((b.revenue || 0) - (b.cf || 0));
-        });
-    } else {
-        const propsToUse = selectedProp === 'all' ? active : [selectedProp];
-        for (let i = rng.s; i <= rng.e; i++) {
-            const mLabel = months[i] || "";
-            if (selectedMonth !== "All" && !mLabel.startsWith(selectedMonth)) continue;
-            
-            propsToUse.forEach(pid => {
-                grossRevenue += (D[pid]?.revenue?.[i] || 0);
-                netRevenue += (D[pid]?.revenueExCF?.[i] || 0);
-            });
-        }
-    }
+    // Always calculate directly from the ledger (calendar data) for precision
+    ledger.forEach(b => {
+        grossRevenue += (b.revenue || 0);
+        netRevenue += ((b.revenue || 0) - (b.cf || 0));
+    });
 
     const totalCF = grossRevenue - netRevenue;
     const netMargin = grossRevenue > 0 ? (netRevenue / grossRevenue) * 100 : 0;
@@ -295,6 +282,35 @@ const ledger = useMemo(() => {
 
     return { grossRevenue, netRevenue, totalCF, netMargin, avgOldCF, avgNewCF, cfPctChange };
   }, [D, rng, months, ledger, bookings, selectedProp, active, selectedMonth, customStart, customEnd]);
+
+// NEW: Dynamically build chart data from the exact ledger items
+  const calendarD = useMemo(() => {
+      const cD = {};
+      
+      // Initialize an empty structure that matches the expected format
+      PROPS.forEach(p => {
+          cD[p.id] = { revenue: [], revenueExCF: [] };
+          for(let i = 0; i < months.length; i++) {
+              cD[p.id].revenue.push(0);
+              cD[p.id].revenueExCF.push(0);
+          }
+      });
+
+      // Populate it using the filtered ledger data
+      ledger.forEach(b => {
+          const monthStr = MONTH_LABELS[b.checkin.getMonth()];
+          const yearStr = b.checkin.getFullYear().toString().slice(-2);
+          const monthLabel = `${monthStr} ${yearStr}`;
+          const mIdx = months.indexOf(monthLabel);
+          
+          if (mIdx !== -1) {
+              cD[b.pid].revenue[mIdx] += (b.revenue || 0);
+              cD[b.pid].revenueExCF[mIdx] += ((b.revenue || 0) - (b.cf || 0));
+          }
+      });
+      
+      return cD;
+  }, [ledger, months]);
 
 // 4. Calculate Property-Specific CF Targets (Official Policy Legend)
   const propCFAverages = useMemo(() => {
@@ -416,7 +432,7 @@ return (
       <div style={{display: "flex", flexDirection: "column", gap: 16, marginBottom: 16}}>
           <div className="card">
               <div style={{fontSize:14,fontWeight:700,marginBottom:15}}>Selection Net Revenue Performance — {selectedMonth} {range}</div>
-              <AutoWidth>{cw=><PortfolioBar D={D} months={months} activeProps={selectedProp === 'all' ? active : [selectedProp]} sI={rng.s} eI={rng.e} range={range} containerW={cw} metricKey="revenueExCF" height={280} hideTitle={true} showCleaningMetrics={true}/>}</AutoWidth>
+<AutoWidth>{cw=><PortfolioBar D={calendarD} months={months} activeProps={selectedProp === 'all' ? active : [selectedProp]} sI={rng.s} eI={rng.e} range={range} containerW={cw} metricKey="revenueExCF" height={280} hideTitle={true} showCleaningMetrics={true}/>}</AutoWidth>
           </div>
           <div className="card" style={{background: "#F8FAFC", padding: "20px"}}>
               <div style={{fontSize:14,fontWeight:700,marginBottom:12, color:"#1E293B"}}>Applied Fee Methodology</div>
