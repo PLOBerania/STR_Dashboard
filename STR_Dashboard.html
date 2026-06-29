@@ -197,6 +197,16 @@ function YoYChart({D,months,pid,metricKey,y1,y2,w=360,h=180}){
 function CleaningView({ D, months, active, rng, bookings, range, setRange }) {
   const [selectedProp, setSelectedProp] = useState('all');
   const [selectedMonth, setSelectedMonth] = useState('All');
+
+  // --- NEW CODE: CUSTOM DATE RANGE STATES ---
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState("");
+  const [showDatePicker, setShowDatePicker] = useState(false);
+
+  // Helper formatting for the button display label
+  const dateButtonText = (customStart || customEnd)
+    ? `${customStart ? new Date(customStart + "T00:00:00").toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : 'Start'} - ${customEnd ? new Date(customEnd + "T00:00:00").toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : 'End'}`
+    : "📅 Select Custom Dates";
 // DYNAMIC YEAR GENERATOR: Calculate years for the Cleaning View
   let availableYears = [2021, 2022, 2023, 2024, 2025, 2026];
   if (bookings && bookings.length > 0) {
@@ -211,49 +221,62 @@ function CleaningView({ D, months, active, rng, bookings, range, setRange }) {
       }
   }
 
-  const ledger = useMemo(() => {
+const ledger = useMemo(() => {
     return (bookings || []).filter(b => {
         const isPropSelected = selectedProp === 'all' ? active.includes(b.pid.toLowerCase()) : b.pid.toLowerCase() === selectedProp.toLowerCase();
         if (!isPropSelected) return false;
-        if (range !== "All") {
-            const checkinYear = b.checkin.getFullYear().toString();
-            if (checkinYear !== range.toString()) return false;
-        }
-        if (selectedMonth !== "All") {
-            const bMonth = MONTH_LABELS[b.checkin.getMonth()];
-            if (bMonth !== selectedMonth) return false;
+        
+        // Custom Day Range Filter logic
+        if (customStart || customEnd) {
+            const bDate = b.checkin;
+            if (customStart && bDate < new Date(customStart + "T00:00:00")) return false;
+            if (customEnd && bDate > new Date(customEnd + "T23:59:59")) return false;
+        } else {
+            // Standard Year/Month fixed row filters
+            if (range !== "All") {
+                const checkinYear = b.checkin.getFullYear().toString();
+                if (checkinYear !== range.toString()) return false;
+            }
+            if (selectedMonth !== "All") {
+                const bMonth = MONTH_LABELS[b.checkin.getMonth()];
+                if (bMonth !== selectedMonth) return false;
+            }
         }
         return true;
     }).sort((a, b) => b.checkin - a.checkin);
-  }, [bookings, selectedProp, active, range, selectedMonth]);
+  }, [bookings, selectedProp, active, range, selectedMonth, customStart, customEnd]);
 
-const stats = useMemo(() => {
+  const stats = useMemo(() => {
     let grossRevenue = 0;
     let netRevenue = 0;
 
-    // 1. Calculate Macro Stats based on the aggregate data 'D' to match the bar graph
-    const propsToUse = selectedProp === 'all' ? active : [selectedProp];
-    
-    for (let i = rng.s; i <= rng.e; i++) {
-        const mLabel = months[i] || "";
-        if (selectedMonth !== "All" && !mLabel.startsWith(selectedMonth)) continue;
-        
-        propsToUse.forEach(pid => {
-            grossRevenue += (D[pid]?.revenue?.[i] || 0);
-            netRevenue += (D[pid]?.revenueExCF?.[i] || 0);
+    // Direct day-accurate calculation matching the custom selection range
+    if (customStart || customEnd) {
+        ledger.forEach(b => {
+            grossRevenue += (b.revenue || 0);
+            netRevenue += ((b.revenue || 0) - (b.cf || 0));
         });
+    } else {
+        const propsToUse = selectedProp === 'all' ? active : [selectedProp];
+        for (let i = rng.s; i <= rng.e; i++) {
+            const mLabel = months[i] || "";
+            if (selectedMonth !== "All" && !mLabel.startsWith(selectedMonth)) continue;
+            
+            propsToUse.forEach(pid => {
+                grossRevenue += (D[pid]?.revenue?.[i] || 0);
+                netRevenue += (D[pid]?.revenueExCF?.[i] || 0);
+            });
+        }
     }
 
     const totalCF = grossRevenue - netRevenue;
     const netMargin = grossRevenue > 0 ? (netRevenue / grossRevenue) * 100 : 0;
 
-    // 2. Calculate Old vs New CF Averages (Using the full bookings array to prevent NaN)
-    const splitDate = new Date(2025, 8, 1); // September 1, 2025 (Month index 8)
+    const splitDate = new Date(2025, 8, 1);
     let oldCfSum = 0, oldCfCount = 0;
     let newCfSum = 0, newCfCount = 0;
 
     (bookings || []).forEach(b => {
-        // Only evaluate bookings for properties currently checked in the UI
         const isPropSelected = selectedProp === 'all' ? active.includes(b.pid.toLowerCase()) : b.pid.toLowerCase() === selectedProp.toLowerCase();
         if (!isPropSelected) return;
 
@@ -268,12 +291,10 @@ const stats = useMemo(() => {
 
     const avgOldCF = oldCfCount > 0 ? oldCfSum / oldCfCount : 0;
     const avgNewCF = newCfCount > 0 ? newCfSum / newCfCount : 0;
-    
-    // Percentage Difference Formula: (New - Old) / Old * 100
     const cfPctChange = avgOldCF > 0 ? ((avgNewCF - avgOldCF) / avgOldCF) * 100 : 0;
 
     return { grossRevenue, netRevenue, totalCF, netMargin, avgOldCF, avgNewCF, cfPctChange };
-  }, [D, rng, months, bookings, selectedProp, active, selectedMonth]);
+  }, [D, rng, months, ledger, bookings, selectedProp, active, selectedMonth, customStart, customEnd]);
 
 // 4. Calculate Property-Specific CF Targets (Official Policy Legend)
   const propCFAverages = useMemo(() => {
@@ -295,37 +316,85 @@ return (
       {/* --- NEW STICKY WRAPPER --- */}
       <div style={{ position: "sticky", top: 51, background: "#F7F8FA", zIndex: 90, margin: "-16px -20px 16px -20px", padding: "16px 20px 12px 20px", borderBottom: "1px solid #E2E5EA", borderLeft: "1px solid #E2E5EA", borderRight: "1px solid #E2E5EA", borderRadius: "0 0 10px 10px" }}>
         
-        <div style={{marginBottom:18, display: "flex", flexDirection: "column", gap: 12}}>
-            {/* Property Row */}
-            <div style={{display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 8, flexWrap: "wrap"}}>
-                <span style={{fontSize: 11, color: "#7A8090", fontWeight: 700, textTransform: "uppercase", width: 60}}>Property:</span>
-                <button className={`btn sm ${selectedProp === 'all' ? "on" : ""}`} onClick={() => setSelectedProp('all')}>All</button>
-                {PROPS.map(p => (
-                    <button key={p.id} className={`btn sm ${selectedProp === p.id ? "on" : ""}`} onClick={() => setSelectedProp(p.id)}>{p.short}</button>
-                ))}
-            </div>
-            
-            {/* Month Row */}
-            <div style={{display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 8, flexWrap: "wrap"}}>
-                <span style={{fontSize: 11, color: "#7A8090", fontWeight: 700, textTransform: "uppercase", width: 60}}>Month:</span>
-                <button className={`btn sm ${selectedMonth === 'All' ? "on" : ""}`} onClick={() => setSelectedMonth('All')}>All</button>
-                {MONTH_LABELS.map(ml => (
-                    <button key={ml} className={`btn sm ${selectedMonth === ml ? "on" : ""}`} onClick={() => setSelectedMonth(ml)}>{ml}</button>
-                ))}
-            </div>
+{/* --- REPLACED FILTER CONTAINER AREA WITH POP-OVER DATE ELEMENT --- */}
+      <div style={{ marginBottom: 18, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 20 }}>
+          
+          {/* Row Filter Lists */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, opacity: (customStart || customEnd) ? 0.45 : 1, transition: "opacity 0.2s" }}>
+              {/* Property Row */}
+              <div style={{display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 8, flexWrap: "wrap"}}>
+                  <span style={{fontSize: 11, color: "#7A8090", fontWeight: 700, textTransform: "uppercase", width: 60}}>Property:</span>
+                  <button disabled={customStart || customEnd} className={`btn sm ${selectedProp === 'all' ? "on" : ""}`} onClick={() => setSelectedProp('all')}>All</button>
+                  {PROPS.map(p => (
+                      <button disabled={customStart || customEnd} key={p.id} className={`btn sm ${selectedProp === p.id ? "on" : ""}`} onClick={() => setSelectedProp(p.id)}>{p.short}</button>
+                  ))}
+              </div>
+              
+              {/* Month Row */}
+              <div style={{display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 8, flexWrap: "wrap"}}>
+                  <span style={{fontSize: 11, color: "#7A8090", fontWeight: 700, textTransform: "uppercase", width: 60}}>Month:</span>
+                  <button disabled={customStart || customEnd} className={`btn sm ${selectedMonth === 'All' ? "on" : ""}`} onClick={() => setSelectedMonth('All')}>All</button>
+                  {MONTH_LABELS.map(ml => (
+                      <button disabled={customStart || customEnd} key={ml} className={`btn sm ${selectedMonth === ml ? "on" : ""}`} onClick={() => setSelectedMonth(ml)}>{ml}</button>
+                  ))}
+              </div>
 
-            {/* Year Row */}
-            <div style={{display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 8, flexWrap: "wrap", width: "100%"}}>
-                <span style={{fontSize: 11, color: "#7A8090", fontWeight: 700, textTransform: "uppercase", width: 60}}>Year:</span>
-                <button className={`btn sm ${range === "All" ? "on" : ""}`} onClick={() => setRange("All")}>All</button>
-                {availableYears.map(yearNum => {
-                    const yr = yearNum.toString();
-                    return (
-                        <button key={yr} className={`btn sm ${range === yr ? "on" : ""}`} onClick={() => setRange(yr)}>{yr}</button>
-                    );
-                })}
-            </div>
-        </div>
+              {/* Year Row */}
+              <div style={{display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 8, flexWrap: "wrap", width: "100%"}}>
+                  <span style={{fontSize: 11, color: "#7A8090", fontWeight: 700, textTransform: "uppercase", width: 60}}>Year:</span>
+                  <button disabled={customStart || customEnd} className={`btn sm ${range === "All" ? "on" : ""}`} onClick={() => setRange("All")}>All</button>
+                  {availableYears.map(yearNum => {
+                      const yr = yearNum.toString();
+                      return (
+                          <button disabled={customStart || customEnd} key={yr} className={`btn sm ${range === yr ? "on" : ""}`} onClick={() => setRange(yr)}>{yr}</button>
+                      );
+                  })}
+              </div>
+          </div>
+
+          {/* Dynamic Floating Date Dropdown matching image_cdf95f.png */}
+          <div style={{ position: "relative" }}>
+              <button 
+                  className={`btn ${(customStart || customEnd) ? "on" : ""}`} 
+                  onClick={() => setShowDatePicker(!showDatePicker)}
+                  style={{ minWidth: 220, textAlign: "left", display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: 600 }}
+              >
+                  <span>{dateButtonText}</span>
+                  <span style={{ fontSize: 9, marginLeft: 8 }}>{showDatePicker ? "▲" : "▼"}</span>
+              </button>
+
+              {showDatePicker && (
+                  <div className="card" style={{ position: "absolute", right: 0, top: "115%", width: 280, zIndex: 110, padding: 15, boxShadow: "0 10px 25px rgba(0,0,0,0.08)", display: "flex", flexDirection: "column", gap: 12 }}>
+                      <div>
+                          <label style={{ fontSize: 10, fontWeight: 700, color: "#7A8090", display: "block", marginBottom: 4, textTransform: "uppercase" }}>Start Date</label>
+                          <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)} style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid #D0D5DC", fontFamily: "inherit", fontSize: 12 }} />
+                      </div>
+                      <div>
+                          <label style={{ fontSize: 10, fontWeight: 700, color: "#7A8090", display: "block", marginBottom: 4, textTransform: "uppercase" }}>End Date</label>
+                          <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)} style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid #D0D5DC", fontFamily: "inherit", fontSize: 12 }} />
+                      </div>
+                      
+                      {/* Presets and Controls Container */}
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6, borderTop: "1px solid #E2E5EA", paddingTop: 10 }}>
+                          <span style={{ fontSize: 9, fontWeight: 700, color: "#A0A5B5", textTransform: "uppercase" }}>Presets</span>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 12px" }}>
+                              <span style={{ fontSize: 11, color: "#6366F1", cursor: "pointer", fontWeight: 500 }} onClick={() => { const d=new Date(); setCustomStart(new Date(d.setDate(d.getDate() - d.getDay() + 1)).toISOString().split('T')[0]); setCustomEnd(new Date().toISOString().split('T')[0]); }}>Current week</span>
+                              <span style={{ fontSize: 11, color: "#6366F1", cursor: "pointer", fontWeight: 500 }} onClick={() => { const d=new Date(); setCustomStart(new Date(d.setDate(d.getDate() - 7)).toISOString().split('T')[0]); setCustomEnd(new Date().toISOString().split('T')[0]); }}>Last 7 days</span>
+                              <span style={{ fontSize: 11, color: "#6366F1", cursor: "pointer", fontWeight: 500 }} onClick={() => { const d=new Date(); setCustomStart(new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0]); setCustomEnd(new Date().toISOString().split('T')[0]); }}>Current month</span>
+                              <span style={{ fontSize: 11, color: "#6366F1", cursor: "pointer", fontWeight: 500 }} onClick={() => { const d=new Date(); setCustomStart(new Date(d.setMonth(d.getMonth() - 3)).toISOString().split('T')[0]); setCustomEnd(new Date().toISOString().split('T')[0]); }}>Last 3 months</span>
+                          </div>
+                      </div>
+
+                      <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+                          <button className="btn sm primary" style={{ flex: 1 }} onClick={() => setShowDatePicker(false)}>Apply</button>
+                          {(customStart || customEnd) && (
+                              <button className="btn sm" style={{ color: "#EF4444" }} onClick={() => { setCustomStart(""); setCustomEnd(""); setShowDatePicker(false); }}>Reset</button>
+                          )}
+                      </div>
+                  </div>
+              )}
+          </div>
+      </div>
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {[
