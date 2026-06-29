@@ -517,7 +517,7 @@ return (
                         <th style={{padding:10,textAlign:"left"}}>Guest</th>
                         <th style={{padding:10,textAlign:"left"}}>Stay Type</th>
                         <th style={{padding:10,textAlign:"left"}}>Extras</th>
-                        <th style={{padding:10,textAlign:"right"}}>Extra Cost</th>
+                        <th style={{padding:10,textAlign:"right"}}>Extra Fee</th>
                         <th style={{padding:10,textAlign:"right"}}>Gross Revenue</th>
                         <th style={{padding:10,textAlign:"right"}}>Applied CF</th>
                         <th style={{padding:10,textAlign:"right"}}>Net Revenue</th>
@@ -533,8 +533,29 @@ const netRevenue = (b.revenue || 0) - (b.cf || 0), isFixedRange = b.checkin >= n
                 <td style={{padding: 10}}>{b.checkin.toLocaleDateString()}</td>
                 <td style={{padding: 10}}>{b.guest}</td>
                 <td style={{padding: 10}}>{b.typeOfStay}</td>
-                <td style={{padding: 10}}><span style={{color: '#7A8090', fontWeight: 400}}>None</span></td>
-                <td style={{padding: 10, textAlign: "right", color: '#7A8090', fontWeight: 400}}>$0</td>
+                {/* Extras Column */}
+                <td style={{
+                    padding: 10, 
+                    color: b.extraNote !== "None" ? '#1A1D24' : '#7A8090', 
+                    fontWeight: 400, 
+                    maxWidth: 150, 
+                    whiteSpace: "normal", 
+                    overflowWrap: "break-word" 
+                }}>
+                    {b.extraNote !== "None" && b.extraNote 
+                        ? b.extraNote.charAt(0).toUpperCase() + b.extraNote.slice(1) 
+                        : b.extraNote}
+                </td>
+                
+                {/* Extra Cost Column */}
+                <td style={{
+                    padding: 10, 
+                    textAlign: "right", 
+                    color: b.extraCost > 0 ? '#EF4444' : '#7A8090', 
+                    fontWeight: b.extraCost > 0 ? 600 : 400
+                }}>
+                    ${Math.round(b.extraCost).toLocaleString()}
+                </td>
                 <td style={{padding: 10, textAlign: "right", fontWeight: 700}}>{`$${Math.round(b.revenue).toLocaleString()}`}</td>
                 
                 {/* UPDATED APPLIED CF CELL */}
@@ -672,6 +693,11 @@ const parseBookings = useCallback((raw) => {
           
           const cancelledBadge = <span style={{ color: "red", fontWeight: "500" }}>Cancelled</span>;
           
+          // Grab the appended values from the absolute end of the row
+          const extraCost = cleanNum(r[r.length - 2]);
+          const extraNoteRaw = r[r.length - 1];
+          const extraNote = extraNoteRaw && extraNoteRaw !== "" ? extraNoteRaw : "None";
+          
           parsed.push({ 
               pid: pid, 
               guest: r[8] || "Guest", 
@@ -683,9 +709,10 @@ const parseBookings = useCallback((raw) => {
               cf: appliedCf, 
               revenue: rawRevenue, 
               adr: adr, 
-              // We can safely leave the badge here because you aren't doing math on stay types
               typeOfStay: isCancelled ? cancelledBadge : stayTypes[Math.floor(Math.random() * stayTypes.length)], 
               damages: "None",
+              extraCost: extraCost, // New field mapped from backend
+              extraNote: extraNote, // New field mapped from backend
               isCancelled: isCancelled
           });
       }
