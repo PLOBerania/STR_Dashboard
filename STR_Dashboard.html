@@ -229,16 +229,22 @@ function CleaningView({ D, months, active, rng, bookings, range, setRange }) {
 
 const stats = useMemo(() => {
     let grossRevenue = 0;
-    let totalCF = 0;
+    let netRevenue = 0;
 
-    // 1. Calculate Macro Stats based on current UI selection (Year/Month/Property)
-    // FIX: Using 'ledger' instead of 'filteredBookings' to match the existing code
-    ledger.forEach(b => {
-        grossRevenue += (b.revenue || 0);
-        totalCF += (b.cf || 0);
-    });
+    // 1. Calculate Macro Stats based on the aggregate data 'D' to match the bar graph
+    const propsToUse = selectedProp === 'all' ? active : [selectedProp];
+    
+    for (let i = rng.s; i <= rng.e; i++) {
+        const mLabel = months[i] || "";
+        if (selectedMonth !== "All" && !mLabel.startsWith(selectedMonth)) continue;
+        
+        propsToUse.forEach(pid => {
+            grossRevenue += (D[pid]?.revenue?.[i] || 0);
+            netRevenue += (D[pid]?.revenueExCF?.[i] || 0);
+        });
+    }
 
-    const netRevenue = grossRevenue - totalCF;
+    const totalCF = grossRevenue - netRevenue;
     const netMargin = grossRevenue > 0 ? (netRevenue / grossRevenue) * 100 : 0;
 
     // 2. Calculate Old vs New CF Averages (Using the full bookings array to prevent NaN)
@@ -267,7 +273,7 @@ const stats = useMemo(() => {
     const cfPctChange = avgOldCF > 0 ? ((avgNewCF - avgOldCF) / avgOldCF) * 100 : 0;
 
     return { grossRevenue, netRevenue, totalCF, netMargin, avgOldCF, avgNewCF, cfPctChange };
-  }, [ledger, bookings, selectedProp, active]); // FIX: updated dependency to 'ledger'
+  }, [D, rng, months, bookings, selectedProp, active, selectedMonth]);
 
 // 4. Calculate Property-Specific CF Targets (Official Policy Legend)
   const propCFAverages = useMemo(() => {
@@ -337,7 +343,7 @@ return (
 
       </div>
       {/* --- END STICKY WRAPPER --- */}
-      
+
       <div style={{display: "flex", flexDirection: "column", gap: 16, marginBottom: 16}}>
           <div className="card">
               <div style={{fontSize:14,fontWeight:700,marginBottom:15}}>Selection Net Revenue Performance — {selectedMonth} {range}</div>
