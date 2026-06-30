@@ -94,7 +94,7 @@ function ReviewBar({value,label}){
   return<div style={{marginBottom:5}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#5A6070",marginBottom:2}}><span>{label}</span><span style={{color:"#1A1D24",fontWeight:600}}>{parseFloat(value||0).toFixed(1)}</span></div><div style={{position:"relative",height:4,background:"#F0F2F5",borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:`${pct}%`,background:color,borderRadius:3}}/></div></div>;
 }
 
-function LineChart({D,months,metricKey,sI,eI,activeProps,width=820,height=320}){
+function LineChart({D,months,metricKey,sI,eI,activeProps,width=820,height=320, showCleaningMetrics=false}){
   const[hov,setHov]=useState(null);const wrapRef=useRef(null);
   const pad={t:20,r:20,b:72,l:58};const cW=width-pad.l-pad.r,cH=height-pad.t-pad.b;const cnt=eI-sI+1;
   const allV=[];activeProps.forEach(pid=>{if(!D[pid]) return; for(let i=sI;i<=eI;i++){const v=D[pid][metricKey]?.[i];if(v!=null)allV.push(v);}});
@@ -113,8 +113,21 @@ function LineChart({D,months,metricKey,sI,eI,activeProps,width=820,height=320}){
       {PROPS.map(p=>activeProps.includes(p.id)&&D[p.id]?.[metricKey]&&<path key={p.id} d={D[p.id][metricKey].map((v,i)=>i>=sI&&i<=eI?{x:xS(i),y:yS(v)}:null).filter(x=>x).map((pt,j)=>`${j?"L":"M"}${pt.x},${pt.y}`).join(" ")} fill="none" stroke={p.color} strokeWidth="2" opacity=".8"/>)}
     </svg>
     {hov&&<div className="chart-tip" style={{left:hov.x,top:pad.t}}>
-      <div style={{fontWeight:700,fontSize:10}}>{months[hov.idx]}</div>
-      {activeProps.map(pid=>{const v=D[pid]?.[metricKey]?.[hov.idx];const p=PROPS.find(x=>x.id===pid);return v!=null&&<div key={pid} className="tip-row"><span className="tip-dot" style={{background:p.color}}/>{p.short}: {mObj.fmt(v)}</div>})}
+      <div style={{fontWeight:700,fontSize:10, marginBottom: showCleaningMetrics ? 6 : 0, paddingBottom: showCleaningMetrics ? 4 : 0, borderBottom: showCleaningMetrics ? "1px solid #3A4050" : "none"}}>{months[hov.idx]}</div>
+      {showCleaningMetrics ? (() => {
+          let mGross = 0; let mNet = 0; const mIdx = hov.idx;
+          activeProps.forEach(pid => { mGross += (D[pid]?.revenue?.[mIdx] || 0); mNet += (D[pid]?.revenueExCF?.[mIdx] || 0); });
+          const pct = mGross > 0 ? ((mNet / mGross) * 100).toFixed(1) : 0;
+          return (
+              <>
+                  <div className="tip-row"><span className="tip-dot" style={{background:"#94A3B8"}}/>Gross: ${Math.round(mGross).toLocaleString()}</div>
+                  <div className="tip-row"><span className="tip-dot" style={{background:"#059669"}}/>Net: ${Math.round(mNet).toLocaleString()}</div>
+                  <div className="tip-row" style={{marginTop: 4}}><span style={{fontWeight: 700}}>Margin: {pct}%</span></div>
+              </>
+          );
+      })() : (
+          activeProps.map(pid=>{const v=D[pid]?.[metricKey]?.[hov.idx];const p=PROPS.find(x=>x.id===pid);return v!=null&&<div key={pid} className="tip-row"><span className="tip-dot" style={{background:p.color}}/>{p.short}: {mObj.fmt(v)}</div>})
+      )}
     </div>}
   </div>);
 }
@@ -553,11 +566,12 @@ return (
                           activeProps={selectedProp === 'all' ? active : [selectedProp]} 
                           width={cw} 
                           height={280}
+                          showCleaningMetrics={true} /* NEW: Passes the advanced metrics flag to the line chart */
                       />
                   )}
               </AutoWidth>
           </div>
-          
+
           <div className="card" style={{background: "#F8FAFC", padding: "20px"}}>
               <div style={{fontSize:14,fontWeight:700,marginBottom:12, color:"#1E293B"}}>Applied Fee Methodology</div>
               <div style={{fontSize:11, color:"#64748B", marginBottom: 20}}>Sept 2025 onwards uses <strong>Optimized Fixed Rates</strong>. All other periods (including 2021) use live <strong>Listing CF</strong>.</div>
@@ -590,7 +604,7 @@ return (
                 })}
               </div>
 <div style={{padding: "20px", borderRadius: 10, background: "linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)", color: "white"}}>
-    <div style={{fontSize: 10, fontWeight: 700, textTransform: "uppercase", opacity: 0.9, letterSpacing: "0.05em", marginBottom: 6}}>CF Rate Change (New vs Old)</div>
+    <div style={{fontSize: 10, fontWeight: 700, textTransform: "uppercase", opacity: 0.9, letterSpacing: "0.05em", marginBottom: 6}}>CF Rate Change (Old vs New)</div>
     <div style={{fontSize: 28, fontWeight: 800}}>
         {stats.cfPctChange > 0 ? "+" : ""}{stats.cfPctChange.toFixed(1)}%
     </div>
@@ -612,7 +626,7 @@ return (
                         <th style={{padding:10,textAlign:"left"}}>Guest</th>
                         <th style={{padding:10,textAlign:"left"}}>Stay Type</th>
                         <th style={{padding:10,textAlign:"left"}}>Extras</th>
-                        <th style={{padding:10,textAlign:"right"}}>Extra Cost</th>
+                        <th style={{padding:10,textAlign:"right"}}>Extra Fee</th>
                         <th style={{padding:10,textAlign:"right"}}>Gross Revenue</th>
                         <th style={{padding:10,textAlign:"right"}}>Applied CF</th>
                         <th style={{padding:10,textAlign:"right"}}>Net Revenue</th>
