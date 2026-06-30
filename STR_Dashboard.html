@@ -514,10 +514,11 @@ return (
                     <tr style={{background:"#F8F9FA",borderBottom:"2px solid #D0D5DC",position:"sticky",top:0}}>
                         <th style={{padding:10,textAlign:"left"}}>Property</th>
                         <th style={{padding:10,textAlign:"left"}}>Check-in</th>
+                        <th style={{padding:10,textAlign:"left"}}>Check-out</th>
                         <th style={{padding:10,textAlign:"left"}}>Guest</th>
                         <th style={{padding:10,textAlign:"left"}}>Stay Type</th>
                         <th style={{padding:10,textAlign:"left"}}>Extras</th>
-                        <th style={{padding:10,textAlign:"right"}}>Extra Fee</th>
+                        <th style={{padding:10,textAlign:"right"}}>Extra Cost</th>
                         <th style={{padding:10,textAlign:"right"}}>Gross Revenue</th>
                         <th style={{padding:10,textAlign:"right"}}>Applied CF</th>
                         <th style={{padding:10,textAlign:"right"}}>Net Revenue</th>
@@ -531,8 +532,10 @@ const netRevenue = (b.revenue || 0) - (b.cf || 0), isFixedRange = b.checkin >= n
             <tr key={i} style={{borderBottom: "1px solid #E2E5EA"}}>
                 <td style={{padding: 10, fontWeight: 600}}>{PROPS.find(px => px.id === b.pid)?.short}</td>
                 <td style={{padding: 10}}>{b.checkin.toLocaleDateString()}</td>
+                <td style={{padding: 10}}>{b.checkout.toLocaleDateString()}</td>
                 <td style={{padding: 10}}>{b.guest}</td>
                 <td style={{padding: 10}}>{b.typeOfStay}</td>
+                
                 {/* Extras Column */}
                 <td style={{
                     padding: 10, 
