@@ -198,6 +198,9 @@ function CleaningView({ D, months, active, rng, bookings, range, setRange }) {
   const [selectedProp, setSelectedProp] = useState('all');
   const [selectedMonth, setSelectedMonth] = useState('All');
 
+  // Chart toggle state (defaults to bar)
+  const [chartType, setChartType] = useState('bar');
+
   // --- NEW CODE: CUSTOM DATE RANGE STATES ---
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
@@ -502,9 +505,59 @@ return (
 
       <div style={{display: "flex", flexDirection: "column", gap: 16, marginBottom: 16}}>
           <div className="card">
-              <div style={{fontSize:14,fontWeight:700,marginBottom:15}}>Selection Net Revenue Performance — {selectedMonth} {range}</div>
-<AutoWidth>{cw=><PortfolioBar D={calendarD} months={months} activeProps={selectedProp === 'all' ? active : [selectedProp]} sI={graphRng.s} eI={graphRng.e} range={range} containerW={cw} metricKey="revenueExCF" height={280} hideTitle={true} showCleaningMetrics={true}/>}</AutoWidth>
+              <div style={{display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 15}}>
+                  <div style={{fontSize:14,fontWeight:700}}>Selection Net Revenue Performance — {selectedMonth} {range}</div>
+                  
+                  {/* NEW CHART TOGGLE BUTTONS */}
+                  <div style={{display: "flex", gap: 4, background: "#F0F2F5", padding: 3, borderRadius: 6, border: "1px solid #E2E5EA"}}>
+                      <button 
+                          className="btn sm" 
+                          style={{border: "none", background: chartType === 'bar' ? '#FFFFFF' : 'transparent', color: chartType === 'bar' ? '#1A1D24' : '#7A8090', boxShadow: chartType === 'bar' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', fontWeight: chartType === 'bar' ? 700 : 500}} 
+                          onClick={() => setChartType('bar')}
+                      >
+                          📊 Bar
+                      </button>
+                      <button 
+                          className="btn sm" 
+                          style={{border: "none", background: chartType === 'line' ? '#FFFFFF' : 'transparent', color: chartType === 'line' ? '#1A1D24' : '#7A8090', boxShadow: chartType === 'line' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', fontWeight: chartType === 'line' ? 700 : 500}} 
+                          onClick={() => setChartType('line')}
+                      >
+                          📈 Line
+                      </button>
+                  </div>
+              </div>
+              
+              {/* CONDITIONAL CHART RENDERING */}
+              <AutoWidth>
+                  {cw => chartType === 'bar' ? (
+                      <PortfolioBar 
+                          D={calendarD} 
+                          months={months} 
+                          activeProps={selectedProp === 'all' ? active : [selectedProp]} 
+                          sI={graphRng.s} 
+                          eI={graphRng.e} 
+                          range={range} 
+                          containerW={cw} 
+                          metricKey="revenueExCF" 
+                          height={280} 
+                          hideTitle={true} 
+                          showCleaningMetrics={true}
+                      />
+                  ) : (
+                      <LineChart 
+                          D={calendarD} 
+                          months={months} 
+                          metricKey="revenueExCF" 
+                          sI={graphRng.s} 
+                          eI={graphRng.e} 
+                          activeProps={selectedProp === 'all' ? active : [selectedProp]} 
+                          width={cw} 
+                          height={280}
+                      />
+                  )}
+              </AutoWidth>
           </div>
+          
           <div className="card" style={{background: "#F8FAFC", padding: "20px"}}>
               <div style={{fontSize:14,fontWeight:700,marginBottom:12, color:"#1E293B"}}>Applied Fee Methodology</div>
               <div style={{fontSize:11, color:"#64748B", marginBottom: 20}}>Sept 2025 onwards uses <strong>Optimized Fixed Rates</strong>. All other periods (including 2021) use live <strong>Listing CF</strong>.</div>
