@@ -210,11 +210,17 @@ function YoYChart({D,months,pid,metricKey,y1,y2,w=360,h=180}){
 function CleaningView({ D, months, active, rng, bookings, range, setRange }) {
   const [selectedProp, setSelectedProp] = useState('all');
   const [selectedMonth, setSelectedMonth] = useState('All');
-
+  
   // Chart toggle state (defaults to bar)
   const [chartType, setChartType] = useState('bar');
 
-  // --- NEW CODE: CUSTOM DATE RANGE STATES ---
+  // --- TABLE FILTER & SORT STATES ---
+  const [sortKey, setSortKey] = useState("date_desc");
+  const [stayType, setStayType] = useState("All");
+  const [showExtrasOnly, setShowExtrasOnly] = useState(false);
+  const [showCancelled, setShowCancelled] = useState("All");
+
+  // --- CUSTOM DATE RANGE STATES ---
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -223,7 +229,8 @@ function CleaningView({ D, months, active, rng, bookings, range, setRange }) {
   const dateButtonText = (customStart || customEnd)
     ? `${customStart ? new Date(customStart + "T00:00:00").toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : 'Start'} - ${customEnd ? new Date(customEnd + "T00:00:00").toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : 'End'}`
     : "📅 Select Custom Dates";
-// DYNAMIC YEAR GENERATOR: Calculate years for the Cleaning View
+
+  // DYNAMIC YEAR GENERATOR
   let availableYears = [2021, 2022, 2023, 2024, 2025, 2026];
   if (bookings && bookings.length > 0) {
       const yearsSet = new Set();
@@ -237,18 +244,17 @@ function CleaningView({ D, months, active, rng, bookings, range, setRange }) {
       }
   }
 
-const ledger = useMemo(() => {
+  // CORE LEDGER (Drives the charts and top stats)
+  const ledger = useMemo(() => {
     return (bookings || []).filter(b => {
         const isPropSelected = selectedProp === 'all' ? active.includes(b.pid.toLowerCase()) : b.pid.toLowerCase() === selectedProp.toLowerCase();
         if (!isPropSelected) return false;
         
-        // Custom Day Range Filter logic
         if (customStart || customEnd) {
             const bDate = b.checkin;
             if (customStart && bDate < new Date(customStart + "T00:00:00")) return false;
             if (customEnd && bDate > new Date(customEnd + "T23:59:59")) return false;
         } else {
-            // Standard Year/Month fixed row filters
             if (range !== "All") {
                 const checkinYear = b.checkin.getFullYear().toString();
                 if (checkinYear !== range.toString()) return false;
@@ -262,11 +268,9 @@ const ledger = useMemo(() => {
     }).sort((a, b) => b.checkin - a.checkin);
   }, [bookings, selectedProp, active, range, selectedMonth, customStart, customEnd]);
 
-const stats = useMemo(() => {
-    let grossRevenue = 0;
-    let netRevenue = 0;
-
-    // Always calculate directly from the ledger (calendar data) for precision
+  // TOP STATS CALCULATIONS
+  const stats = useMemo(() => {
+    let grossRevenue = 0, netRevenue = 0;
     ledger.forEach(b => {
         grossRevenue += (b.revenue || 0);
         netRevenue += ((b.revenue || 0) - (b.cf || 0));
@@ -274,22 +278,14 @@ const stats = useMemo(() => {
 
     const totalCF = grossRevenue - netRevenue;
     const netMargin = grossRevenue > 0 ? (netRevenue / grossRevenue) * 100 : 0;
-
     const splitDate = new Date(2025, 8, 1);
-    let oldCfSum = 0, oldCfCount = 0;
-    let newCfSum = 0, newCfCount = 0;
+    let oldCfSum = 0, oldCfCount = 0, newCfSum = 0, newCfCount = 0;
 
     (bookings || []).forEach(b => {
         const isPropSelected = selectedProp === 'all' ? active.includes(b.pid.toLowerCase()) : b.pid.toLowerCase() === selectedProp.toLowerCase();
         if (!isPropSelected) return;
-
-        if (b.checkin < splitDate) {
-            oldCfSum += (b.cf || 0);
-            oldCfCount++;
-        } else {
-            newCfSum += (b.cf || 0);
-            newCfCount++;
-        }
+        if (b.checkin < splitDate) { oldCfSum += (b.cf || 0); oldCfCount++; } 
+        else { newCfSum += (b.cf || 0); newCfCount++; }
     });
 
     const avgOldCF = oldCfCount > 0 ? oldCfSum / oldCfCount : 0;
@@ -297,156 +293,126 @@ const stats = useMemo(() => {
     const cfPctChange = avgOldCF > 0 ? ((avgNewCF - avgOldCF) / avgOldCF) * 100 : 0;
 
     return { grossRevenue, netRevenue, totalCF, netMargin, avgOldCF, avgNewCF, cfPctChange };
-  }, [D, rng, months, ledger, bookings, selectedProp, active, selectedMonth, customStart, customEnd]);
+  }, [ledger, bookings, selectedProp, active]);
 
-// NEW: Dynamically build chart data from the exact ledger items
+  // CHART DATA
   const calendarD = useMemo(() => {
       const cD = {};
-      
-      // Initialize an empty structure that matches the expected format
-      PROPS.forEach(p => {
-          cD[p.id] = { revenue: [], revenueExCF: [] };
-          for(let i = 0; i < months.length; i++) {
-              cD[p.id].revenue.push(0);
-              cD[p.id].revenueExCF.push(0);
-          }
-      });
-
-      // Populate it using the filtered ledger data
+      PROPS.forEach(p => { cD[p.id] = { revenue: [], revenueExCF: [] }; for(let i=0; i<months.length; i++){ cD[p.id].revenue.push(0); cD[p.id].revenueExCF.push(0); } });
       ledger.forEach(b => {
-          const monthStr = MONTH_LABELS[b.checkin.getMonth()];
-          const yearStr = b.checkin.getFullYear().toString().slice(-2);
-          const monthLabel = `${monthStr} ${yearStr}`;
+          const monthLabel = `${MONTH_LABELS[b.checkin.getMonth()]} ${b.checkin.getFullYear().toString().slice(-2)}`;
           const mIdx = months.indexOf(monthLabel);
-          
           if (mIdx !== -1) {
               cD[b.pid].revenue[mIdx] += (b.revenue || 0);
               cD[b.pid].revenueExCF[mIdx] += ((b.revenue || 0) - (b.cf || 0));
           }
       });
-      
       return cD;
   }, [ledger, months]);
 
-// 4. Calculate Property-Specific CF Targets (Official Policy Legend)
+  // METHODOLOGY BASELINES
   const propCFAverages = useMemo(() => {
     const result = {};
-    
     PROPS.forEach(p => {
-        const oldFee = BASELINE_CLEANING_FEES[p.id] || 0; // Official Old Baseline
-        const newFee = AVG_CLEANING_FEES[p.id] || 0;      // Official New Target
+        const oldFee = BASELINE_CLEANING_FEES[p.id] || 0;
+        const newFee = AVG_CLEANING_FEES[p.id] || 0;
         const pct = oldFee > 0 ? Math.round(((newFee - oldFee) / oldFee) * 100) : 0;
-        
         result[p.id] = { oldFee, newFee, pct };
     });
-    
     return result;
   }, []);
 
-// NEW: Calculate dynamic zoom range for the chart based on custom dates or active data bounds
+  // AUTO-FOCUS ZOOM RANGE FOR CHARTS
   const graphRng = useMemo(() => {
       if (customStart || customEnd) {
-          let sIdx = 0;
-          let eIdx = months.length - 1;
-
+          let sIdx = 0, eIdx = months.length - 1;
           if (customStart) {
               const dStart = new Date(customStart + "T00:00:00");
-              const lblStart = `${MONTH_LABELS[dStart.getMonth()]} ${dStart.getFullYear().toString().slice(-2)}`;
-              const idxStart = months.indexOf(lblStart);
+              const idxStart = months.indexOf(`${MONTH_LABELS[dStart.getMonth()]} ${dStart.getFullYear().toString().slice(-2)}`);
               if (idxStart !== -1) sIdx = idxStart;
           }
-
           if (customEnd) {
               const dEnd = new Date(customEnd + "T00:00:00");
-              const lblEnd = `${MONTH_LABELS[dEnd.getMonth()]} ${dEnd.getFullYear().toString().slice(-2)}`;
-              const idxEnd = months.indexOf(lblEnd);
+              const idxEnd = months.indexOf(`${MONTH_LABELS[dEnd.getMonth()]} ${dEnd.getFullYear().toString().slice(-2)}`);
               if (idxEnd !== -1) eIdx = idxEnd;
           }
-
-          // Ensure start isn't accidentally after end
           if (sIdx > eIdx) return { s: eIdx, e: sIdx };
-          
           return { s: sIdx, e: eIdx };
       }
       
-      // AUTO-FOCUS LOGIC: If looking at "All" years, zoom into the months that actually have data
       if (range === "All" && ledger && ledger.length > 0) {
-          // ledger is sorted newest to oldest, so index 0 is newest, last index is oldest
           const newestDate = ledger[0].checkin;
           const oldestDate = ledger[ledger.length - 1].checkin;
-
-          const startLbl = `${MONTH_LABELS[oldestDate.getMonth()]} ${oldestDate.getFullYear().toString().slice(-2)}`;
-          const endLbl = `${MONTH_LABELS[newestDate.getMonth()]} ${newestDate.getFullYear().toString().slice(-2)}`;
-
-          const sIdx = months.indexOf(startLbl);
-          const eIdx = months.indexOf(endLbl);
-
+          const sIdx = months.indexOf(`${MONTH_LABELS[oldestDate.getMonth()]} ${oldestDate.getFullYear().toString().slice(-2)}`);
+          const eIdx = months.indexOf(`${MONTH_LABELS[newestDate.getMonth()]} ${newestDate.getFullYear().toString().slice(-2)}`);
           if (sIdx !== -1 && eIdx !== -1) {
-              // Add a 1-month visual buffer on each side so the chart doesn't look cut off
-              return { 
-                  s: Math.max(0, sIdx - 1), 
-                  e: Math.min(months.length - 1, eIdx + 1) 
-              };
+              return { s: Math.max(0, sIdx - 1), e: Math.min(months.length - 1, eIdx + 1) };
           }
       }
-      
-      // Fallback to the standard year range if no custom dates are active
       return rng;
   }, [customStart, customEnd, months, rng, range, ledger]);
 
-return (
+  // --- NEW DECOUPLED TABLE DATA LOGIC ---
+  const uniqueStayTypes = useMemo(() => {
+      const types = new Set();
+      (ledger || []).forEach(b => {
+          if (!b.isCancelled && typeof b.typeOfStay === 'string') types.add(b.typeOfStay);
+      });
+      return Array.from(types).sort();
+  }, [ledger]);
+
+  const tableData = useMemo(() => {
+      let data = [...(ledger || [])];
+
+      if (stayType !== "All") data = data.filter(b => b.typeOfStay === stayType);
+      if (showExtrasOnly) data = data.filter(b => b.extraNote && b.extraNote !== "None");
+      if (showCancelled === "Excluded") data = data.filter(b => !b.isCancelled);
+      if (showCancelled === "Only") data = data.filter(b => b.isCancelled);
+
+      data.sort((a, b) => {
+          if (sortKey.startsWith("date")) {
+              const diff = a.checkin - b.checkin;
+              return sortKey.endsWith("desc") ? -diff : diff;
+          }
+          if (sortKey.startsWith("net")) {
+              const netA = (a.revenue || 0) - (a.cf || 0);
+              const netB = (b.revenue || 0) - (b.cf || 0);
+              return sortKey.endsWith("desc") ? netB - netA : netA - netB;
+          }
+          if (sortKey.startsWith("extra")) {
+              const exA = a.extraCost || 0;
+              const exB = b.extraCost || 0;
+              return sortKey.endsWith("desc") ? exB - exA : exA - exB;
+          }
+          return 0;
+      });
+      return data;
+  }, [ledger, sortKey, stayType, showExtrasOnly, showCancelled]);
+
+  return (
     <div className="fade" style={{ padding: "16px 20px", maxWidth: 1400, margin: "0 auto" }}>
-      {/* --- NEW STICKY WRAPPER --- */}
+      
+      {/* STICKY FILTER HEADER */}
       <div style={{ position: "sticky", top: 51, background: "#F7F8FA", zIndex: 90, margin: "-16px -20px 16px -20px", padding: "16px 20px 12px 20px", borderBottom: "1px solid #E2E5EA", borderLeft: "1px solid #E2E5EA", borderRight: "1px solid #E2E5EA", borderRadius: "0 0 10px 10px" }}>
         
-{/* --- REPLACED FILTER CONTAINER AREA WITH POP-OVER DATE ELEMENT --- */}
       <div style={{ marginBottom: 18, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 20 }}>
           
-          {/* Row Filter Lists */}
-          {/* Row Filter Lists */}
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              
-              {/* Property Row - Pill Style to Match Overview Tab */}
+              {/* PROPERTY PILLS */}
               <div style={{display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 6, flexWrap: "wrap"}}>
                   <span style={{fontSize: 11, color: "#7A8090", fontWeight: 700, textTransform: "uppercase", width: 60}}>Property:</span>
-                  
-                  {/* "All" Pill */}
-                  <span 
-                      className="pill" 
-                      onClick={() => setSelectedProp('all')} 
-                      style={{
-                          background: selectedProp === 'all' ? "#E8453C20" : "#F0F2F5",
-                          color: selectedProp === 'all' ? "#E8453C" : "#8A90A0", 
-                          borderColor: selectedProp === 'all' ? "#E8453C60" : "transparent"
-                      }}
-                  >
-                      All
-                  </span>
-                  
-                  {/* Dynamic Property Pills */}
+                  <span className="pill" onClick={() => setSelectedProp('all')} style={{ background: selectedProp === 'all' ? "#E8453C20" : "#F0F2F5", color: selectedProp === 'all' ? "#E8453C" : "#8A90A0", borderColor: selectedProp === 'all' ? "#E8453C60" : "transparent" }}>All</span>
                   {PROPS.map(p => {
                       const isActive = selectedProp === p.id;
                       return (
-                          <span 
-                              key={p.id} 
-                              className="pill" 
-                              onClick={() => setSelectedProp(p.id)} 
-                              style={{
-                                  background: isActive ? p.color + "20" : "#F0F2F5",
-                                  color: isActive ? p.color : "#8A90A0", 
-                                  borderColor: isActive ? p.color + "60" : "transparent"
-                              }}
-                          >
+                          <span key={p.id} className="pill" onClick={() => setSelectedProp(p.id)} style={{ background: isActive ? p.color + "20" : "#F0F2F5", color: isActive ? p.color : "#8A90A0", borderColor: isActive ? p.color + "60" : "transparent" }}>
                               {p.short}
                           </span>
                       );
                   })}
               </div>
               
-              {/* Date Filters - Faded & Disabled when Custom Dates are active */}
               <div style={{ display: "flex", flexDirection: "column", gap: 12, opacity: (customStart || customEnd) ? 0.45 : 1, transition: "opacity 0.2s" }}>
-                  
-                  {/* Month Row */}
                   <div style={{display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 8, flexWrap: "wrap"}}>
                       <span style={{fontSize: 11, color: "#7A8090", fontWeight: 700, textTransform: "uppercase", width: 60}}>Month:</span>
                       <button disabled={customStart || customEnd} className={`btn sm ${selectedMonth === 'All' ? "on" : ""}`} onClick={() => setSelectedMonth('All')}>All</button>
@@ -454,8 +420,6 @@ return (
                           <button disabled={customStart || customEnd} key={ml} className={`btn sm ${selectedMonth === ml ? "on" : ""}`} onClick={() => setSelectedMonth(ml)}>{ml}</button>
                       ))}
                   </div>
-
-                  {/* Year Row */}
                   <div style={{display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 8, flexWrap: "wrap", width: "100%"}}>
                       <span style={{fontSize: 11, color: "#7A8090", fontWeight: 700, textTransform: "uppercase", width: 60}}>Year:</span>
                       <button disabled={customStart || customEnd} className={`btn sm ${range === "All" ? "on" : ""}`} onClick={() => setRange("All")}>All</button>
@@ -466,17 +430,12 @@ return (
                           );
                       })}
                   </div>
-                  
               </div>
           </div>
 
-          {/* Dynamic Floating Date Dropdown matching image_cdf95f.png */}
+          {/* DYNAMIC DATE PICKER */}
           <div style={{ position: "relative" }}>
-              <button 
-                  className={`btn ${(customStart || customEnd) ? "on" : ""}`} 
-                  onClick={() => setShowDatePicker(!showDatePicker)}
-                  style={{ minWidth: 220, textAlign: "left", display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: 600 }}
-              >
+              <button className={`btn ${(customStart || customEnd) ? "on" : ""}`} onClick={() => setShowDatePicker(!showDatePicker)} style={{ minWidth: 220, textAlign: "left", display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: 600 }}>
                   <span>{dateButtonText}</span>
                   <span style={{ fontSize: 9, marginLeft: 8 }}>{showDatePicker ? "▲" : "▼"}</span>
               </button>
@@ -492,27 +451,15 @@ return (
                           <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)} style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid #D0D5DC", fontFamily: "inherit", fontSize: 12 }} />
                       </div>
                       
-                      {/* Presets and Controls Container */}
                       <div style={{ display: "flex", flexDirection: "column", gap: 10, borderTop: "1px solid #E2E5EA", paddingTop: 12 }}>
                           <span style={{ fontSize: 9, fontWeight: 700, color: "#A0A5B5", textTransform: "uppercase" }}>Presets</span>
-                          
-                          {/* Changed to a 2-column grid for perfectly even spacing */}
                           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                              
                               <button className="btn sm" style={{ fontWeight: 500 }} onClick={() => { const d=new Date(); setCustomStart(new Date(d.setDate(d.getDate() - d.getDay() + 1)).toISOString().split('T')[0]); setCustomEnd(new Date().toISOString().split('T')[0]); }}>Current week</button>
-                              
                               <button className="btn sm" style={{ fontWeight: 500 }} onClick={() => { const d=new Date(); setCustomStart(new Date(d.setDate(d.getDate() - 7)).toISOString().split('T')[0]); setCustomEnd(new Date().toISOString().split('T')[0]); }}>Last 7 days</button>
-                              
                               <button className="btn sm" style={{ fontWeight: 500 }} onClick={() => { const d=new Date(); setCustomStart(new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0]); setCustomEnd(new Date().toISOString().split('T')[0]); }}>Current month</button>
-                              
                               <button className="btn sm" style={{ fontWeight: 500 }} onClick={() => { const d=new Date(); setCustomStart(new Date(d.setMonth(d.getMonth() - 3)).toISOString().split('T')[0]); setCustomEnd(new Date().toISOString().split('T')[0]); }}>Last 3 months</button>
-                              
-                              {/* New: Last 6 months */}
                               <button className="btn sm" style={{ fontWeight: 500 }} onClick={() => { const d=new Date(); setCustomStart(new Date(d.setMonth(d.getMonth() - 6)).toISOString().split('T')[0]); setCustomEnd(new Date().toISOString().split('T')[0]); }}>Last 6 months</button>
-                              
-                              {/* New: Last 12 months */}
                               <button className="btn sm" style={{ fontWeight: 500 }} onClick={() => { const d=new Date(); setCustomStart(new Date(d.setFullYear(d.getFullYear() - 1)).toISOString().split('T')[0]); setCustomEnd(new Date().toISOString().split('T')[0]); }}>Last 12 months</button>
-                              
                           </div>
                       </div>
 
@@ -542,76 +489,37 @@ return (
         </div>
 
       </div>
-      {/* --- END STICKY WRAPPER --- */}
 
       <div style={{display: "flex", flexDirection: "column", gap: 16, marginBottom: 16}}>
+          
+          {/* CHART CONTAINER WITH TOGGLES */}
           <div className="card">
               <div style={{display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 15}}>
                   <div style={{fontSize:14,fontWeight:700}}>Selection Net Revenue Performance — {selectedMonth} {range}</div>
-                  
-                  {/* NEW CHART TOGGLE BUTTONS */}
                   <div style={{display: "flex", gap: 4, background: "#F0F2F5", padding: 3, borderRadius: 6, border: "1px solid #E2E5EA"}}>
-                      <button 
-                          className="btn sm" 
-                          style={{border: "none", background: chartType === 'bar' ? '#FFFFFF' : 'transparent', color: chartType === 'bar' ? '#1A1D24' : '#7A8090', boxShadow: chartType === 'bar' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', fontWeight: chartType === 'bar' ? 700 : 500}} 
-                          onClick={() => setChartType('bar')}
-                      >
-                          📊 Bar
-                      </button>
-                      <button 
-                          className="btn sm" 
-                          style={{border: "none", background: chartType === 'line' ? '#FFFFFF' : 'transparent', color: chartType === 'line' ? '#1A1D24' : '#7A8090', boxShadow: chartType === 'line' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', fontWeight: chartType === 'line' ? 700 : 500}} 
-                          onClick={() => setChartType('line')}
-                      >
-                          📈 Line
-                      </button>
+                      <button className="btn sm" style={{border: "none", background: chartType === 'bar' ? '#FFFFFF' : 'transparent', color: chartType === 'bar' ? '#1A1D24' : '#7A8090', boxShadow: chartType === 'bar' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', fontWeight: chartType === 'bar' ? 700 : 500}} onClick={() => setChartType('bar')}>📊 Bar</button>
+                      <button className="btn sm" style={{border: "none", background: chartType === 'line' ? '#FFFFFF' : 'transparent', color: chartType === 'line' ? '#1A1D24' : '#7A8090', boxShadow: chartType === 'line' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', fontWeight: chartType === 'line' ? 700 : 500}} onClick={() => setChartType('line')}>📈 Line</button>
                   </div>
               </div>
               
-              {/* CONDITIONAL CHART RENDERING */}
               <AutoWidth>
                   {cw => chartType === 'bar' ? (
-                      <PortfolioBar 
-                          D={calendarD} 
-                          months={months} 
-                          activeProps={selectedProp === 'all' ? active : [selectedProp]} 
-                          sI={graphRng.s} 
-                          eI={graphRng.e} 
-                          range={range} 
-                          containerW={cw} 
-                          metricKey="revenueExCF" 
-                          height={280} 
-                          hideTitle={true} 
-                          showCleaningMetrics={true}
-                      />
+                      <PortfolioBar D={calendarD} months={months} activeProps={selectedProp === 'all' ? active : [selectedProp]} sI={graphRng.s} eI={graphRng.e} range={range} containerW={cw} metricKey="revenueExCF" height={280} hideTitle={true} showCleaningMetrics={true} />
                   ) : (
-                      <LineChart 
-                          D={calendarD} 
-                          months={months} 
-                          metricKey="revenueExCF" 
-                          sI={graphRng.s} 
-                          eI={graphRng.e} 
-                          activeProps={selectedProp === 'all' ? active : [selectedProp]} 
-                          width={cw} 
-                          height={280}
-                          showCleaningMetrics={true} /* NEW: Passes the advanced metrics flag to the line chart */
-                      />
+                      <LineChart D={calendarD} months={months} metricKey="revenueExCF" sI={graphRng.s} eI={graphRng.e} activeProps={selectedProp === 'all' ? active : [selectedProp]} width={cw} height={280} showCleaningMetrics={true} />
                   )}
               </AutoWidth>
           </div>
 
+          {/* METHODOLOGY CARDS */}
           <div className="card" style={{background: "#F8FAFC", padding: "20px"}}>
               <div style={{fontSize:14,fontWeight:700,marginBottom:12, color:"#1E293B"}}>Applied Fee Methodology</div>
               <div style={{fontSize:11, color:"#64748B", marginBottom: 20}}>Sept 2025 onwards uses <strong>Optimized Fixed Rates</strong>. All other periods (including 2021) use live <strong>Listing CF</strong>.</div>
-<div style={{display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 20}}>
+              <div style={{display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 20}}>
                 {PROPS.map(p => {
-                    // FIX: Replaced Val's hardcoded constants with dynamic actuals
                     const data = propCFAverages[p.id];
                     if (!data) return null;
-                    
                     const { oldFee, newFee, pct } = data;
-                    
-                    // Dynamic colors: Green if fees dropped, Red if fees went up
                     const pctColor = pct > 0 ? "#EF4444" : (pct < 0 ? "#059669" : "#7A8090");
                     const pctSign = pct > 0 ? "+" : "";
 
@@ -622,28 +530,53 @@ return (
                                 <div style={{fontSize: 12, fontWeight: 800, color: pctColor}}>{pctSign}{pct}%</div>
                             </div>
                             <div style={{display: "flex", justifyContent: "space-between", alignItems: "flex-end"}}>
-                                <div style={{fontSize: 11, color: "#64748B"}}>
-                                    ${oldFee} <span style={{fontSize: 9}}>(Old)</span> → <span style={{color: pctColor, fontWeight: 700}}>${newFee}</span>
-                                </div>
+                                <div style={{fontSize: 11, color: "#64748B"}}>${oldFee} <span style={{fontSize: 9}}>(Old)</span> → <span style={{color: pctColor, fontWeight: 700}}>${newFee}</span></div>
                                 <div style={{fontSize: 9, color: "#94A3B8"}}>Actual Avg</div>
                             </div>
                         </div>
                     )
                 })}
               </div>
-<div style={{padding: "20px", borderRadius: 10, background: "linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)", color: "white"}}>
-    <div style={{fontSize: 10, fontWeight: 700, textTransform: "uppercase", opacity: 0.9, letterSpacing: "0.05em", marginBottom: 6}}>CF Rate Change (Old vs New)</div>
-    <div style={{fontSize: 28, fontWeight: 800}}>
-        {stats.cfPctChange > 0 ? "+" : ""}{stats.cfPctChange.toFixed(1)}%
-    </div>
-    <div style={{fontSize: 11, marginTop: 8, opacity: 0.9}}>
-        Avg Pre-Sept '25: ${Math.round(stats.avgOldCF)} | Avg Sept '25 Onward: ${Math.round(stats.avgNewCF)}
-    </div>
-</div>
+              <div style={{padding: "20px", borderRadius: 10, background: "linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)", color: "white"}}>
+                  <div style={{fontSize: 10, fontWeight: 700, textTransform: "uppercase", opacity: 0.9, letterSpacing: "0.05em", marginBottom: 6}}>CF Rate Change (New vs Old)</div>
+                  <div style={{fontSize: 28, fontWeight: 800}}>{stats.cfPctChange > 0 ? "+" : ""}{stats.cfPctChange.toFixed(1)}%</div>
+                  <div style={{fontSize: 11, marginTop: 8, opacity: 0.9}}>Avg Pre-Sept '25: ${Math.round(stats.avgOldCF)} | Avg Sept '25 Onward: ${Math.round(stats.avgNewCF)}</div>
+              </div>
           </div>
       </div>
+      
+      {/* FILTERABLE TABLE CARD */}
       <div className="card">
-        <div style={{fontSize:14,fontWeight:600,marginBottom:10}}>Recent Cleaning Fee Ledger</div>
+        <div style={{display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 10}}>
+            <div style={{fontSize:14,fontWeight:700}}>Recent Cleaning Fee Ledger</div>
+            
+            <div style={{display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap"}}>
+                <select style={{padding: "5px 10px", fontSize: 11, fontWeight: 600, border: "1px solid #D0D5DC", borderRadius: 6, outline: "none", cursor: "pointer"}} value={sortKey} onChange={e => setSortKey(e.target.value)}>
+                    <option value="date_desc">Sort: Date (Newest)</option>
+                    <option value="date_asc">Sort: Date (Oldest)</option>
+                    <option value="net_desc">Sort: Net Rev (High - Low)</option>
+                    <option value="net_asc">Sort: Net Rev (Low - High)</option>
+                    <option value="extra_desc">Sort: Extras (High - Low)</option>
+                    <option value="extra_asc">Sort: Extras (Low - High)</option>
+                </select>
+
+                <select style={{padding: "5px 10px", fontSize: 11, fontWeight: 600, border: "1px solid #D0D5DC", borderRadius: 6, outline: "none", cursor: "pointer"}} value={stayType} onChange={e => setStayType(e.target.value)}>
+                    <option value="All">Type: All</option>
+                    {uniqueStayTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+
+                <select style={{padding: "5px 10px", fontSize: 11, fontWeight: 600, border: "1px solid #D0D5DC", borderRadius: 6, outline: "none", cursor: "pointer"}} value={showCancelled} onChange={e => setShowCancelled(e.target.value)}>
+                    <option value="All">Status: All</option>
+                    <option value="Excluded">Exclude Cancelled</option>
+                    <option value="Only">Only Cancelled</option>
+                </select>
+
+                <button className={`btn sm ${showExtrasOnly ? 'primary' : ''}`} onClick={() => setShowExtrasOnly(!showExtrasOnly)} style={{fontWeight: 600}}>
+                    {showExtrasOnly ? "✓ With Extras" : "Filter: Extras"}
+                </button>
+            </div>
+        </div>
+        
         <div style={{maxHeight:400,overflowY:"auto"}}>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                 <thead>
@@ -654,68 +587,52 @@ return (
                         <th style={{padding:10,textAlign:"left"}}>Guest</th>
                         <th style={{padding:10,textAlign:"left"}}>Stay Type</th>
                         <th style={{padding:10,textAlign:"left"}}>Extras</th>
-                        <th style={{padding:10,textAlign:"right"}}>Extra Fee</th>
+                        <th style={{padding:10,textAlign:"right"}}>Extra Cost</th>
                         <th style={{padding:10,textAlign:"right"}}>Gross Revenue</th>
                         <th style={{padding:10,textAlign:"right"}}>Applied CF</th>
                         <th style={{padding:10,textAlign:"right"}}>Net Revenue</th>
                     </tr>
                 </thead>
-<tbody>
-    {ledger.map((b, i) => {
-const netRevenue = (b.revenue || 0) - (b.cf || 0), isFixedRange = b.checkin >= new Date(2025, 8, 1);
-        
-        return (
-            <tr key={i} style={{borderBottom: "1px solid #E2E5EA"}}>
-                <td style={{padding: 10, fontWeight: 600}}>{PROPS.find(px => px.id === b.pid)?.short}</td>
-                <td style={{padding: 10}}>{b.checkin.toLocaleDateString()}</td>
-                <td style={{padding: 10}}>{b.checkout.toLocaleDateString()}</td>
-                <td style={{padding: 10}}>{b.guest}</td>
-                <td style={{padding: 10}}>{b.typeOfStay}</td>
-                
-                {/* Extras Column */}
-                <td style={{
-                    padding: 10, 
-                    color: b.extraNote !== "None" ? '#1A1D24' : '#7A8090', 
-                    fontWeight: 400, 
-                    maxWidth: 150, 
-                    whiteSpace: "normal", 
-                    overflowWrap: "break-word" 
-                }}>
-                    {b.extraNote !== "None" && b.extraNote 
-                        ? b.extraNote.charAt(0).toUpperCase() + b.extraNote.slice(1) 
-                        : b.extraNote}
-                </td>
-                
-                {/* Extra Cost Column */}
-                <td style={{
-                    padding: 10, 
-                    textAlign: "right", 
-                    color: b.extraCost > 0 ? '#EF4444' : '#7A8090', 
-                    fontWeight: b.extraCost > 0 ? 600 : 400
-                }}>
-                    ${Math.round(b.extraCost).toLocaleString()}
-                </td>
-                <td style={{padding: 10, textAlign: "right", fontWeight: 700}}>{`$${Math.round(b.revenue).toLocaleString()}`}</td>
-                
-                {/* UPDATED APPLIED CF CELL */}
-                <td style={{padding: 10, textAlign: "right", color: isFixedRange ? "#059669" : "#1A1D24", fontWeight: 700}}>
-                    {b.isCancelled ? (
-                        <span style={{ color: "red", fontWeight: "500" }}>Cancelled</span>
-                    ) : (
-                        <>
-                            ${Math.round(b.cf || 0).toLocaleString()} 
-                            <span style={{fontSize: 8, marginLeft: 4, verticalAlign: 'middle', color: '#7A8090'}}>
-                                {isFixedRange ? "FIXED RATE" : "LISTING CF"}
-                            </span>
-                        </>
-                    )}
-                </td>
-                
-                <td style={{padding: 10, textAlign: "right", color: "#4F46E5", fontWeight: 700}}>${Math.round(netRevenue).toLocaleString()}</td>
-            </tr>
-        );
-    })}
-</tbody>
+                <tbody>
+                    {tableData.map((b, i) => {
+                        const netRevenue = (b.revenue || 0) - (b.cf || 0), isFixedRange = b.checkin >= new Date(2025, 8, 1);
+                        
+                        return (
+                            <tr key={i} style={{borderBottom: "1px solid #E2E5EA"}}>
+                                <td style={{padding: 10, fontWeight: 600}}>{PROPS.find(px => px.id === b.pid)?.short}</td>
+                                <td style={{padding: 10}}>{b.checkin.toLocaleDateString()}</td>
+                                <td style={{padding: 10}}>{b.checkout.toLocaleDateString()}</td>
+                                <td style={{padding: 10}}>{b.guest}</td>
+                                <td style={{padding: 10}}>{b.typeOfStay}</td>
+                                
+                                <td style={{padding: 10, color: b.extraNote !== "None" ? '#1A1D24' : '#7A8090', fontWeight: 400, maxWidth: 150, whiteSpace: "normal", overflowWrap: "break-word"}}>
+                                    {b.extraNote !== "None" && b.extraNote ? b.extraNote.charAt(0).toUpperCase() + b.extraNote.slice(1) : b.extraNote}
+                                </td>
+                                
+                                <td style={{padding: 10, textAlign: "right", color: b.extraCost > 0 ? '#EF4444' : '#7A8090', fontWeight: b.extraCost > 0 ? 600 : 400}}>
+                                    ${Math.round(b.extraCost).toLocaleString()}
+                                </td>
+                                
+                                <td style={{padding: 10, textAlign: "right", fontWeight: 700}}>{`$${Math.round(b.revenue).toLocaleString()}`}</td>
+                                
+                                <td style={{padding: 10, textAlign: "right", color: isFixedRange ? "#059669" : "#1A1D24", fontWeight: 700}}>
+                                    {b.isCancelled ? (
+                                        <span style={{ color: "red", fontWeight: "500" }}>Cancelled</span>
+                                    ) : (
+                                        <>
+                                            ${Math.round(b.cf || 0).toLocaleString()} 
+                                            <span style={{fontSize: 8, marginLeft: 4, verticalAlign: 'middle', color: '#7A8090'}}>
+                                                {isFixedRange ? "FIXED RATE" : "LISTING CF"}
+                                            </span>
+                                        </>
+                                    )}
+                                </td>
+                                
+                                <td style={{padding: 10, textAlign: "right", color: "#4F46E5", fontWeight: 700}}>${Math.round(netRevenue).toLocaleString()}</td>
+                            </tr>
+                        );
+                    })}
+                </tbody>
             </table>
         </div>
       </div>
