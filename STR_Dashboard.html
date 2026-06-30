@@ -421,13 +421,26 @@ return (
                       </div>
                       
                       {/* Presets and Controls Container */}
-                      <div style={{ display: "flex", flexDirection: "column", gap: 6, borderTop: "1px solid #E2E5EA", paddingTop: 10 }}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 10, borderTop: "1px solid #E2E5EA", paddingTop: 12 }}>
                           <span style={{ fontSize: 9, fontWeight: 700, color: "#A0A5B5", textTransform: "uppercase" }}>Presets</span>
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 12px" }}>
-                              <span style={{ fontSize: 11, color: "#6366F1", cursor: "pointer", fontWeight: 500 }} onClick={() => { const d=new Date(); setCustomStart(new Date(d.setDate(d.getDate() - d.getDay() + 1)).toISOString().split('T')[0]); setCustomEnd(new Date().toISOString().split('T')[0]); }}>Current week</span>
-                              <span style={{ fontSize: 11, color: "#6366F1", cursor: "pointer", fontWeight: 500 }} onClick={() => { const d=new Date(); setCustomStart(new Date(d.setDate(d.getDate() - 7)).toISOString().split('T')[0]); setCustomEnd(new Date().toISOString().split('T')[0]); }}>Last 7 days</span>
-                              <span style={{ fontSize: 11, color: "#6366F1", cursor: "pointer", fontWeight: 500 }} onClick={() => { const d=new Date(); setCustomStart(new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0]); setCustomEnd(new Date().toISOString().split('T')[0]); }}>Current month</span>
-                              <span style={{ fontSize: 11, color: "#6366F1", cursor: "pointer", fontWeight: 500 }} onClick={() => { const d=new Date(); setCustomStart(new Date(d.setMonth(d.getMonth() - 3)).toISOString().split('T')[0]); setCustomEnd(new Date().toISOString().split('T')[0]); }}>Last 3 months</span>
+                          
+                          {/* Changed to a 2-column grid for perfectly even spacing */}
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                              
+                              <button className="btn sm" style={{ fontWeight: 500 }} onClick={() => { const d=new Date(); setCustomStart(new Date(d.setDate(d.getDate() - d.getDay() + 1)).toISOString().split('T')[0]); setCustomEnd(new Date().toISOString().split('T')[0]); }}>Current week</button>
+                              
+                              <button className="btn sm" style={{ fontWeight: 500 }} onClick={() => { const d=new Date(); setCustomStart(new Date(d.setDate(d.getDate() - 7)).toISOString().split('T')[0]); setCustomEnd(new Date().toISOString().split('T')[0]); }}>Last 7 days</button>
+                              
+                              <button className="btn sm" style={{ fontWeight: 500 }} onClick={() => { const d=new Date(); setCustomStart(new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0]); setCustomEnd(new Date().toISOString().split('T')[0]); }}>Current month</button>
+                              
+                              <button className="btn sm" style={{ fontWeight: 500 }} onClick={() => { const d=new Date(); setCustomStart(new Date(d.setMonth(d.getMonth() - 3)).toISOString().split('T')[0]); setCustomEnd(new Date().toISOString().split('T')[0]); }}>Last 3 months</button>
+                              
+                              {/* New: Last 6 months */}
+                              <button className="btn sm" style={{ fontWeight: 500 }} onClick={() => { const d=new Date(); setCustomStart(new Date(d.setMonth(d.getMonth() - 6)).toISOString().split('T')[0]); setCustomEnd(new Date().toISOString().split('T')[0]); }}>Last 6 months</button>
+                              
+                              {/* New: Last 12 months */}
+                              <button className="btn sm" style={{ fontWeight: 500 }} onClick={() => { const d=new Date(); setCustomStart(new Date(d.setFullYear(d.getFullYear() - 1)).toISOString().split('T')[0]); setCustomEnd(new Date().toISOString().split('T')[0]); }}>Last 12 months</button>
+                              
                           </div>
                       </div>
 
