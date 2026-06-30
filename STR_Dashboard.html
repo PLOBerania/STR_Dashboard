@@ -406,13 +406,41 @@ return (
           {/* Row Filter Lists */}
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               
-              {/* Property Row - NOW ALWAYS ACTIVE */}
-              <div style={{display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 8, flexWrap: "wrap"}}>
+              {/* Property Row - Pill Style to Match Overview Tab */}
+              <div style={{display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 6, flexWrap: "wrap"}}>
                   <span style={{fontSize: 11, color: "#7A8090", fontWeight: 700, textTransform: "uppercase", width: 60}}>Property:</span>
-                  <button className={`btn sm ${selectedProp === 'all' ? "on" : ""}`} onClick={() => setSelectedProp('all')}>All</button>
-                  {PROPS.map(p => (
-                      <button key={p.id} className={`btn sm ${selectedProp === p.id ? "on" : ""}`} onClick={() => setSelectedProp(p.id)}>{p.short}</button>
-                  ))}
+                  
+                  {/* "All" Pill */}
+                  <span 
+                      className="pill" 
+                      onClick={() => setSelectedProp('all')} 
+                      style={{
+                          background: selectedProp === 'all' ? "#E8453C20" : "#F0F2F5",
+                          color: selectedProp === 'all' ? "#E8453C" : "#8A90A0", 
+                          borderColor: selectedProp === 'all' ? "#E8453C60" : "transparent"
+                      }}
+                  >
+                      All
+                  </span>
+                  
+                  {/* Dynamic Property Pills */}
+                  {PROPS.map(p => {
+                      const isActive = selectedProp === p.id;
+                      return (
+                          <span 
+                              key={p.id} 
+                              className="pill" 
+                              onClick={() => setSelectedProp(p.id)} 
+                              style={{
+                                  background: isActive ? p.color + "20" : "#F0F2F5",
+                                  color: isActive ? p.color : "#8A90A0", 
+                                  borderColor: isActive ? p.color + "60" : "transparent"
+                              }}
+                          >
+                              {p.short}
+                          </span>
+                      );
+                  })}
               </div>
               
               {/* Date Filters - Faded & Disabled when Custom Dates are active */}
