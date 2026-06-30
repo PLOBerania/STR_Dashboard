@@ -208,10 +208,9 @@ function YoYChart({D,months,pid,metricKey,y1,y2,w=360,h=180}){
 }
 
 function CleaningView({ D, months, active, rng, bookings, range, setRange }) {
-  const [selectedProp, setSelectedProp] = useState('all');
+  // --- CORE UI STATES ---
+  const [selectedProps, setSelectedProps] = useState(['all']);
   const [selectedMonth, setSelectedMonth] = useState('All');
-  
-  // Chart toggle state (defaults to bar)
   const [chartType, setChartType] = useState('bar');
 
   // --- TABLE FILTER & SORT STATES ---
@@ -235,19 +234,16 @@ function CleaningView({ D, months, active, rng, bookings, range, setRange }) {
   if (bookings && bookings.length > 0) {
       const yearsSet = new Set();
       bookings.forEach(b => {
-          if (b.checkin && !isNaN(b.checkin.getTime())) {
-              yearsSet.add(b.checkin.getFullYear());
-          }
+          if (b.checkin && !isNaN(b.checkin.getTime())) yearsSet.add(b.checkin.getFullYear());
       });
-      if (yearsSet.size > 0) {
-          availableYears = Array.from(yearsSet).sort((a, b) => a - b);
-      }
+      if (yearsSet.size > 0) availableYears = Array.from(yearsSet).sort((a, b) => a - b);
   }
 
-  // CORE LEDGER (Drives the charts and top stats)
+  // --- CORE LEDGER DATA ---
   const ledger = useMemo(() => {
     return (bookings || []).filter(b => {
-        const isPropSelected = selectedProp === 'all' ? active.includes(b.pid.toLowerCase()) : b.pid.toLowerCase() === selectedProp.toLowerCase();
+        // Smart Multi-Select Filter Logic
+        const isPropSelected = selectedProps.includes('all') ? active.includes(b.pid.toLowerCase()) : selectedProps.includes(b.pid.toLowerCase());
         if (!isPropSelected) return false;
         
         if (customStart || customEnd) {
@@ -266,9 +262,9 @@ function CleaningView({ D, months, active, rng, bookings, range, setRange }) {
         }
         return true;
     }).sort((a, b) => b.checkin - a.checkin);
-  }, [bookings, selectedProp, active, range, selectedMonth, customStart, customEnd]);
+  }, [bookings, selectedProps, active, range, selectedMonth, customStart, customEnd]);
 
-  // TOP STATS CALCULATIONS
+  // --- TOP STATS ---
   const stats = useMemo(() => {
     let grossRevenue = 0, netRevenue = 0;
     ledger.forEach(b => {
@@ -282,8 +278,9 @@ function CleaningView({ D, months, active, rng, bookings, range, setRange }) {
     let oldCfSum = 0, oldCfCount = 0, newCfSum = 0, newCfCount = 0;
 
     (bookings || []).forEach(b => {
-        const isPropSelected = selectedProp === 'all' ? active.includes(b.pid.toLowerCase()) : b.pid.toLowerCase() === selectedProp.toLowerCase();
+        const isPropSelected = selectedProps.includes('all') ? active.includes(b.pid.toLowerCase()) : selectedProps.includes(b.pid.toLowerCase());
         if (!isPropSelected) return;
+
         if (b.checkin < splitDate) { oldCfSum += (b.cf || 0); oldCfCount++; } 
         else { newCfSum += (b.cf || 0); newCfCount++; }
     });
@@ -293,9 +290,9 @@ function CleaningView({ D, months, active, rng, bookings, range, setRange }) {
     const cfPctChange = avgOldCF > 0 ? ((avgNewCF - avgOldCF) / avgOldCF) * 100 : 0;
 
     return { grossRevenue, netRevenue, totalCF, netMargin, avgOldCF, avgNewCF, cfPctChange };
-  }, [ledger, bookings, selectedProp, active]);
+  }, [ledger, bookings, selectedProps, active]);
 
-  // CHART DATA
+  // --- CHART DATA GENERATOR ---
   const calendarD = useMemo(() => {
       const cD = {};
       PROPS.forEach(p => { cD[p.id] = { revenue: [], revenueExCF: [] }; for(let i=0; i<months.length; i++){ cD[p.id].revenue.push(0); cD[p.id].revenueExCF.push(0); } });
@@ -310,7 +307,6 @@ function CleaningView({ D, months, active, rng, bookings, range, setRange }) {
       return cD;
   }, [ledger, months]);
 
-  // METHODOLOGY BASELINES
   const propCFAverages = useMemo(() => {
     const result = {};
     PROPS.forEach(p => {
@@ -322,7 +318,7 @@ function CleaningView({ D, months, active, rng, bookings, range, setRange }) {
     return result;
   }, []);
 
-  // AUTO-FOCUS ZOOM RANGE FOR CHARTS
+  // --- AUTO-FOCUS ZOOM ---
   const graphRng = useMemo(() => {
       if (customStart || customEnd) {
           let sIdx = 0, eIdx = months.length - 1;
@@ -345,14 +341,12 @@ function CleaningView({ D, months, active, rng, bookings, range, setRange }) {
           const oldestDate = ledger[ledger.length - 1].checkin;
           const sIdx = months.indexOf(`${MONTH_LABELS[oldestDate.getMonth()]} ${oldestDate.getFullYear().toString().slice(-2)}`);
           const eIdx = months.indexOf(`${MONTH_LABELS[newestDate.getMonth()]} ${newestDate.getFullYear().toString().slice(-2)}`);
-          if (sIdx !== -1 && eIdx !== -1) {
-              return { s: Math.max(0, sIdx - 1), e: Math.min(months.length - 1, eIdx + 1) };
-          }
+          if (sIdx !== -1 && eIdx !== -1) return { s: Math.max(0, sIdx - 1), e: Math.min(months.length - 1, eIdx + 1) };
       }
       return rng;
   }, [customStart, customEnd, months, rng, range, ledger]);
 
-  // --- NEW DECOUPLED TABLE DATA LOGIC ---
+  // --- DECOUPLED TABLE DATA FOR FILTERS ---
   const uniqueStayTypes = useMemo(() => {
       const types = new Set();
       (ledger || []).forEach(b => {
@@ -392,20 +386,51 @@ function CleaningView({ D, months, active, rng, bookings, range, setRange }) {
   return (
     <div className="fade" style={{ padding: "16px 20px", maxWidth: 1400, margin: "0 auto" }}>
       
-      {/* STICKY FILTER HEADER */}
+      {/* STICKY HEADER */}
       <div style={{ position: "sticky", top: 51, background: "#F7F8FA", zIndex: 90, margin: "-16px -20px 16px -20px", padding: "16px 20px 12px 20px", borderBottom: "1px solid #E2E5EA", borderLeft: "1px solid #E2E5EA", borderRight: "1px solid #E2E5EA", borderRadius: "0 0 10px 10px" }}>
         
       <div style={{ marginBottom: 18, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 20 }}>
           
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {/* PROPERTY PILLS */}
+              
+              {/* SMART MULTI-SELECT PROPERTY PILLS (WITH COLORS & ALWAYS ACTIVE) */}
               <div style={{display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 6, flexWrap: "wrap"}}>
                   <span style={{fontSize: 11, color: "#7A8090", fontWeight: 700, textTransform: "uppercase", width: 60}}>Property:</span>
-                  <span className="pill" onClick={() => setSelectedProp('all')} style={{ background: selectedProp === 'all' ? "#E8453C20" : "#F0F2F5", color: selectedProp === 'all' ? "#E8453C" : "#8A90A0", borderColor: selectedProp === 'all' ? "#E8453C60" : "transparent" }}>All</span>
+                  
+                  <span 
+                      className="pill" 
+                      onClick={() => setSelectedProps(['all'])} 
+                      style={{
+                          background: selectedProps.includes('all') ? "#E8453C20" : "#F0F2F5",
+                          color: selectedProps.includes('all') ? "#E8453C" : "#8A90A0", 
+                          borderColor: selectedProps.includes('all') ? "#E8453C60" : "transparent"
+                      }}
+                  >
+                      All
+                  </span>
+                  
                   {PROPS.map(p => {
-                      const isActive = selectedProp === p.id;
+                      const isActive = selectedProps.includes(p.id);
                       return (
-                          <span key={p.id} className="pill" onClick={() => setSelectedProp(p.id)} style={{ background: isActive ? p.color + "20" : "#F0F2F5", color: isActive ? p.color : "#8A90A0", borderColor: isActive ? p.color + "60" : "transparent" }}>
+                          <span 
+                              key={p.id} 
+                              className="pill" 
+                              onClick={() => {
+                                  setSelectedProps(prev => {
+                                      const next = prev.filter(x => x !== 'all');
+                                      if (next.includes(p.id)) {
+                                          const updated = next.filter(x => x !== p.id);
+                                          return updated.length === 0 ? ['all'] : updated;
+                                      }
+                                      return [...next, p.id];
+                                  });
+                              }} 
+                              style={{
+                                  background: isActive ? p.color + "20" : "#F0F2F5",
+                                  color: isActive ? p.color : "#8A90A0", 
+                                  borderColor: isActive ? p.color + "60" : "transparent"
+                              }}
+                          >
                               {p.short}
                           </span>
                       );
@@ -433,7 +458,6 @@ function CleaningView({ D, months, active, rng, bookings, range, setRange }) {
               </div>
           </div>
 
-          {/* DYNAMIC DATE PICKER */}
           <div style={{ position: "relative" }}>
               <button className={`btn ${(customStart || customEnd) ? "on" : ""}`} onClick={() => setShowDatePicker(!showDatePicker)} style={{ minWidth: 220, textAlign: "left", display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: 600 }}>
                   <span>{dateButtonText}</span>
@@ -487,7 +511,6 @@ function CleaningView({ D, months, active, rng, bookings, range, setRange }) {
             </div>
           ))}
         </div>
-
       </div>
 
       <div style={{display: "flex", flexDirection: "column", gap: 16, marginBottom: 16}}>
@@ -504,9 +527,9 @@ function CleaningView({ D, months, active, rng, bookings, range, setRange }) {
               
               <AutoWidth>
                   {cw => chartType === 'bar' ? (
-                      <PortfolioBar D={calendarD} months={months} activeProps={selectedProp === 'all' ? active : [selectedProp]} sI={graphRng.s} eI={graphRng.e} range={range} containerW={cw} metricKey="revenueExCF" height={280} hideTitle={true} showCleaningMetrics={true} />
+                      <PortfolioBar D={calendarD} months={months} activeProps={selectedProps.includes('all') ? active : selectedProps} sI={graphRng.s} eI={graphRng.e} range={range} containerW={cw} metricKey="revenueExCF" height={280} hideTitle={true} showCleaningMetrics={true} />
                   ) : (
-                      <LineChart D={calendarD} months={months} metricKey="revenueExCF" sI={graphRng.s} eI={graphRng.e} activeProps={selectedProp === 'all' ? active : [selectedProp]} width={cw} height={280} showCleaningMetrics={true} />
+                      <LineChart D={calendarD} months={months} metricKey="revenueExCF" sI={graphRng.s} eI={graphRng.e} activeProps={selectedProps.includes('all') ? active : selectedProps} width={cw} height={280} showCleaningMetrics={true} />
                   )}
               </AutoWidth>
           </div>
@@ -601,16 +624,16 @@ function CleaningView({ D, months, active, rng, bookings, range, setRange }) {
                             <tr key={i} style={{borderBottom: "1px solid #E2E5EA"}}>
                                 <td style={{padding: 10, fontWeight: 600}}>{PROPS.find(px => px.id === b.pid)?.short}</td>
                                 <td style={{padding: 10}}>{b.checkin.toLocaleDateString()}</td>
-                                <td style={{padding: 10}}>{b.checkout.toLocaleDateString()}</td>
+                                <td style={{padding: 10}}>{b.checkout ? b.checkout.toLocaleDateString() : "—"}</td>
                                 <td style={{padding: 10}}>{b.guest}</td>
                                 <td style={{padding: 10}}>{b.typeOfStay}</td>
                                 
-                                <td style={{padding: 10, color: b.extraNote !== "None" ? '#1A1D24' : '#7A8090', fontWeight: 400, maxWidth: 150, whiteSpace: "normal", overflowWrap: "break-word"}}>
-                                    {b.extraNote !== "None" && b.extraNote ? b.extraNote.charAt(0).toUpperCase() + b.extraNote.slice(1) : b.extraNote}
+                                <td style={{padding: 10, color: b.extraNote && b.extraNote !== "None" ? '#1A1D24' : '#7A8090', fontWeight: 400, maxWidth: 150, whiteSpace: "normal", overflowWrap: "break-word"}}>
+                                    {b.extraNote && b.extraNote !== "None" ? b.extraNote.charAt(0).toUpperCase() + b.extraNote.slice(1) : (b.extraNote || "None")}
                                 </td>
                                 
                                 <td style={{padding: 10, textAlign: "right", color: b.extraCost > 0 ? '#EF4444' : '#7A8090', fontWeight: b.extraCost > 0 ? 600 : 400}}>
-                                    ${Math.round(b.extraCost).toLocaleString()}
+                                    ${Math.round(b.extraCost || 0).toLocaleString()}
                                 </td>
                                 
                                 <td style={{padding: 10, textAlign: "right", fontWeight: 700}}>{`$${Math.round(b.revenue).toLocaleString()}`}</td>
