@@ -327,7 +327,7 @@ const stats = useMemo(() => {
     return result;
   }, []);
 
-// NEW: Calculate dynamic zoom range for the chart based on custom dates
+// NEW: Calculate dynamic zoom range for the chart based on custom dates or active data bounds
   const graphRng = useMemo(() => {
       if (customStart || customEnd) {
           let sIdx = 0;
@@ -353,9 +353,30 @@ const stats = useMemo(() => {
           return { s: sIdx, e: eIdx };
       }
       
+      // AUTO-FOCUS LOGIC: If looking at "All" years, zoom into the months that actually have data
+      if (range === "All" && ledger && ledger.length > 0) {
+          // ledger is sorted newest to oldest, so index 0 is newest, last index is oldest
+          const newestDate = ledger[0].checkin;
+          const oldestDate = ledger[ledger.length - 1].checkin;
+
+          const startLbl = `${MONTH_LABELS[oldestDate.getMonth()]} ${oldestDate.getFullYear().toString().slice(-2)}`;
+          const endLbl = `${MONTH_LABELS[newestDate.getMonth()]} ${newestDate.getFullYear().toString().slice(-2)}`;
+
+          const sIdx = months.indexOf(startLbl);
+          const eIdx = months.indexOf(endLbl);
+
+          if (sIdx !== -1 && eIdx !== -1) {
+              // Add a 1-month visual buffer on each side so the chart doesn't look cut off
+              return { 
+                  s: Math.max(0, sIdx - 1), 
+                  e: Math.min(months.length - 1, eIdx + 1) 
+              };
+          }
+      }
+      
       // Fallback to the standard year range if no custom dates are active
       return rng;
-  }, [customStart, customEnd, months, rng]);
+  }, [customStart, customEnd, months, rng, range, ledger]);
 
 return (
     <div className="fade" style={{ padding: "16px 20px", maxWidth: 1400, margin: "0 auto" }}>
